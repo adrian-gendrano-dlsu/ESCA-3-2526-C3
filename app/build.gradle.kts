@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "edu.dlsu.driverguard"
+    namespace = "edu.dlsu.esca-3-2526-c3"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "edu.dlsu.driverguard.uidemo"
+        applicationId = "edu.dlsu.esca-3-2526-c3.esca-3-2526-c3"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

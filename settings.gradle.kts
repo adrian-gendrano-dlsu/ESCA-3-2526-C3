@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DriverGuardUIDemo"
+rootProject.name = "ESCA-3-2526-C3"
 include(":app")

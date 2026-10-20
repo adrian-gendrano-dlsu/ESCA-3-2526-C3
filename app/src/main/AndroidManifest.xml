@@ -3,13 +3,13 @@
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
-        android:theme="@style/Theme.DriverGuard">
+        android:theme="@style/Theme.ESCA-3-2526-C3">
 
         <!-- Separate launcher icon, with no in-app path to the supervisor. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="DriverGuard Driver"
+            android:label="ESCA-3-2526-C3 Driver"
             android:icon="@android:drawable/ic_menu_directions">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -20,7 +20,7 @@
         <activity
             android:name=".SupervisorActivity"
             android:exported="true"
-            android:label="DriverGuard Supervisor"
+            android:label="ESCA-3-2526-C3 Supervisor"
             android:icon="@android:drawable/ic_menu_myplaces">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
