@@ -1,4 +1,4 @@
-package edu.dlsu.driverguard
+package edu.dlsu.facedemo
 
 import android.graphics.Bitmap
 import android.graphics.Canvas

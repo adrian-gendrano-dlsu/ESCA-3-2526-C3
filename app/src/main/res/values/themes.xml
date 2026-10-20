@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.DriverGuard" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <style name="Theme.FaceDemo" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>

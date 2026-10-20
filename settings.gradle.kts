@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DriverGuardFaceTrackingDemo"
+rootProject.name = "FaceTrackingDemo"
 include(":app")

@@ -1,4 +1,4 @@
-package edu.dlsu.driverguard
+package edu.dlsu.facedemo
 
 import android.app.Activity
 import android.os.Bundle

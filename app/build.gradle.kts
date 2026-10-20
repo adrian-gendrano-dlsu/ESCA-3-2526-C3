@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "edu.dlsu.driverguard"
+    namespace = "edu.dlsu.facedemo"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "edu.dlsu.driverguard.facetrackingdemo"
+        applicationId = "edu.dlsu.facedemo.facetrackingdemo"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
