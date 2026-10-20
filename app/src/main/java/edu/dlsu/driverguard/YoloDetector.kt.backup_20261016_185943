@@ -1,0 +1,142 @@
+package edu.dlsu.driverguard
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.Interpreter
+import java.io.Closeable
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.max
+import kotlin.math.min
+
+data class Detection(val label: String, val score: Float, val box: RectF)
+
+/** One imported model and a labels file, both stored only on the phone.
+ *  Supported format: Ultralytics YOLO detect TFLite, nms=False, NHWC input,
+ *  one floating output [1,4+classes,N] or [1,N,4+classes].
+ */
+class YoloDetector(model: File, private val labels: List<String>) : Closeable {
+    private val interpreter = Interpreter(model, Interpreter.Options().setNumThreads(2))
+    private val inputShape = interpreter.getInputTensor(0).shape()
+    private val outputShape = interpreter.getOutputTensor(0).shape()
+    private val inputType = interpreter.getInputTensor(0).dataType()
+    private val outputType = interpreter.getOutputTensor(0).dataType()
+    private val size: Int
+    private val channelFirst: Boolean
+    private val predictions: Int
+
+    val info: String
+
+    init {
+        require(labels.isNotEmpty() && labels.size <= 100) { "Load a class-label text file first" }
+        require(interpreter.inputTensorCount == 1 && interpreter.outputTensorCount == 1) {
+            "Expected one input and one output. Export with nms=False."
+        }
+        require(inputShape.size == 4 && inputShape[0] == 1 && inputShape[1] == inputShape[2] && inputShape[3] == 3) {
+            "Only [1,H,W,3] RGB models are supported, got ${inputShape.contentToString()}"
+        }
+        require(inputType == DataType.FLOAT32 || inputType == DataType.UINT8) {
+            "Input must be FLOAT32 or UINT8, got $inputType"
+        }
+        require(outputType == DataType.FLOAT32 && outputShape.size == 3 && outputShape[0] == 1) {
+            "Expected FLOAT32 output [1,4+C,N] or [1,N,4+C], got ${outputShape.contentToString()}"
+        }
+        val channels = labels.size + 4
+        channelFirst = outputShape[1] == channels && outputShape[2] > 1
+        val channelLast = outputShape[2] == channels && outputShape[1] > 1
+        require(channelFirst || channelLast) {
+            "Labels (${labels.size}) do not match output ${outputShape.contentToString()}. Check data.yaml names and nms=False."
+        }
+        size = inputShape[1]
+        predictions = if (channelFirst) outputShape[2] else outputShape[1]
+        info = "Input ${inputShape.contentToString()}, output ${outputShape.contentToString()}, classes ${labels.joinToString()}"
+    }
+
+    fun detect(bitmap: Bitmap): List<Detection> {
+        val input = ByteBuffer.allocateDirect(size * size * 3 * if (inputType == DataType.FLOAT32) 4 else 1)
+            .order(ByteOrder.nativeOrder())
+        val scaled = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val scale = min(size.toFloat() / bitmap.width, size.toFloat() / bitmap.height)
+        val dx = (size - bitmap.width * scale) * .5f
+        val dy = (size - bitmap.height * scale) * .5f
+        Canvas(scaled).apply {
+            drawColor(Color.rgb(114, 114, 114))
+            drawBitmap(bitmap, null, RectF(dx, dy, dx + bitmap.width * scale, dy + bitmap.height * scale), Paint(Paint.FILTER_BITMAP_FLAG))
+        }
+        val pixels = IntArray(size * size)
+        val quant = interpreter.getInputTensor(0).quantizationParams()
+        if (inputType == DataType.UINT8) require(quant.scale > 0f) { "Missing uint8 input quantization scale" }
+        scaled.getPixels(pixels, 0, size, 0, 0, size, size)
+        scaled.recycle()
+        for (pixel in pixels) {
+            val r = Color.red(pixel); val g = Color.green(pixel); val b = Color.blue(pixel)
+            if (inputType == DataType.FLOAT32) {
+                input.putFloat(r / 255f); input.putFloat(g / 255f); input.putFloat(b / 255f)
+            } else {
+                for (value in intArrayOf(r, g, b)) {
+                    val q = (value / 255f / quant.scale + quant.zeroPoint).toInt().coerceIn(0, 255)
+                    input.put(q.toByte())
+                }
+            }
+        }
+        input.rewind()
+        val total = outputShape.reduce(Int::times)
+        val output = ByteBuffer.allocateDirect(total * 4).order(ByteOrder.nativeOrder())
+        interpreter.run(input, output)
+        output.rewind()
+        val values = FloatArray(total)
+        output.asFloatBuffer().get(values)
+
+        fun get(i: Int, ch: Int): Float =
+            if (channelFirst) values[ch * predictions + i] else values[i * (labels.size + 4) + ch]
+
+        val boxes = ArrayList<Detection>()
+        for (i in 0 until predictions) {
+            var classIndex = 0
+            var score = 0f
+            for (c in labels.indices) {
+                val probability = get(i, c + 4)
+                if (probability > score) { score = probability; classIndex = c }
+            }
+            if (score < 0.35f) continue
+            val cx = get(i, 0)
+            val cy = get(i, 1)
+            val w = get(i, 2)
+            val h = get(i, 3)
+            if (!cx.isFinite() || !cy.isFinite() || !w.isFinite() || !h.isFinite() || w <= 0 || h <= 0) continue
+            // Ultralytics raw boxes are in input pixel coordinates.
+            val left = ((cx - w / 2 - dx) / scale).coerceIn(0f, bitmap.width.toFloat())
+            val top = ((cy - h / 2 - dy) / scale).coerceIn(0f, bitmap.height.toFloat())
+            val right = ((cx + w / 2 - dx) / scale).coerceIn(0f, bitmap.width.toFloat())
+            val bottom = ((cy + h / 2 - dy) / scale).coerceIn(0f, bitmap.height.toFloat())
+            if (right <= left || bottom <= top) continue
+            boxes.add(Detection(labels[classIndex], score, RectF(left, top, right, bottom)))
+        }
+        return nonMaxSuppression(boxes)
+    }
+
+    private fun nonMaxSuppression(candidates: List<Detection>): List<Detection> {
+        val remaining = candidates.sortedByDescending { it.score }
+        val output = ArrayList<Detection>()
+        for (candidate in remaining) {
+            if (output.size >= 30) break
+            if (output.any { it.label == candidate.label && iou(it.box, candidate.box) > 0.45f }) continue
+            output.add(candidate)
+        }
+        return output
+    }
+
+    private fun iou(a: RectF, b: RectF): Float {
+        val intersection = max(0f, min(a.right, b.right) - max(a.left, b.left)) *
+            max(0f, min(a.bottom, b.bottom) - max(a.top, b.top))
+        val union = a.width() * a.height() + b.width() * b.height() - intersection
+        return if (union > 0) intersection / union else 0f
+    }
+
+    override fun close() = interpreter.close()
+}
