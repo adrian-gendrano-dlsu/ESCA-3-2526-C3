@@ -1,4 +1,4 @@
-package edu.dlsu.esca-3-2526.c3
+package edu.dlsu.esca_3_2526.c3
 
 import android.content.Context
 import android.graphics.Color

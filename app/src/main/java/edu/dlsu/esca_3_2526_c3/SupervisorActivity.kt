@@ -1,4 +1,4 @@
-package edu.dlsu.esca-3-2526-c3
+package edu.dlsu.esca_3_2526_c3
 
 import android.app.Activity
 import android.os.Bundle

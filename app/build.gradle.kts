@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "edu.dlsu.esca-3-2526-c3"
+    namespace = "edu.dlsu.esca_3_2526_c3"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "edu.dlsu.esca-3-2526-c3.esca-3-2526-c3"
+        applicationId = "edu.dlsu.esca_3_2526_c3.esca_3_2526_c3"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
