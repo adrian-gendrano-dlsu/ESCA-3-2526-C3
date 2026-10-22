@@ -2,8 +2,6 @@ package edu.dlsu.esca_3_2526_c3
 
 import android.app.Activity
 import android.os.Bundle
-import android.view.Gravity
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -26,7 +24,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.background)
         }
-        root.addView(Ui.header(this, "Driver mode", "Your driving dashboard  ·  DEMO"))
+        root.addView(Ui.header(this, "Driver Dashboard"))
         scroller = ScrollView(this).apply {
             isFillViewport = true
             addView(LinearLayout(this@MainActivity).apply {
@@ -64,7 +62,7 @@ class MainActivity : Activity() {
         overview.addView(Ui.title(this, "Risk Level"))
         overview.addView(Ui.chip(this, "LOW RISK  ·  DEMO", Ui.green))
         overview.addView(Ui.space(this, 12))
-        overview.addView(Ui.placeholder(this, "CAMERA / AI LIVE VIEW", "Driver's face preview will appear here", 182))
+        overview.addView(Ui.placeholder(this, "LIVE VIEW", "Driver's face preview will appear here", 182))
         overview.addView(Ui.space(this, 12))
         overview.addView(Ui.pair(this, "Trip duration", "00:48:00"))
         page.addView(overview, Ui.blockParams(this))
@@ -76,7 +74,7 @@ class MainActivity : Activity() {
             metrics.addView(Ui.pair(this, name, "Normal"))
         }
         metrics.addView(Ui.space(this, 10))
-        metrics.addView(Ui.eyebrow(this, "RAW MEASUREMENTS  ·  SAMPLE VALUES"))
+        metrics.addView(Ui.eyebrow(this, "RAW MEASUREMENTS"))
         metrics.addView(Ui.pair(this, "EAR", "0.286"))
         metrics.addView(Ui.pair(this, "MAR", "0.124"))
         metrics.addView(Ui.pair(this, "Yaw", "4.5°"))
@@ -107,11 +105,11 @@ class MainActivity : Activity() {
             text = "Manually Sync Logs to Supervisor"
             isAllCaps = false
             setOnClickListener {
-                Toast.makeText(this@MainActivity, "UI demonstration only. No logs were synchronized.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "The app cannot synchronize logs yet", Toast.LENGTH_LONG).show()
             }
         }
         sync.addView(button)
-        sync.addView(Ui.note(this, "Last synced: Apr 26, 5:00 PM  (sample only)"))
+        sync.addView(Ui.note(this, "Last synced: Apr 26, 5:00 PM"))
         page.addView(sync, Ui.blockParams(this))
     }
 }

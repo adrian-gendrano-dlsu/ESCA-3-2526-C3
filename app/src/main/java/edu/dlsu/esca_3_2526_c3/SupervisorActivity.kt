@@ -4,7 +4,6 @@ import android.app.Activity
 import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.TextView
 
 /** A separate launch entry. No navigation from MainActivity leads here. */
 class SupervisorActivity : Activity() {
@@ -37,10 +36,10 @@ class SupervisorActivity : Activity() {
 
     private fun showSupervisor() {
         content.removeAllViews()
-        content.addView(Ui.header(this, "Supervisor mode", "Remote monitoring  ·  DEMO"), Ui.blockParams(this))
+        content.addView(Ui.header(this, "Supervisor Dashboard"), Ui.blockParams(this))
         val monitor = Ui.card(this)
         monitor.addView(Ui.title(this, "Live Monitoring"))
-        monitor.addView(Ui.note(this, "Select a driver to update the details below"))
+        monitor.addView(Ui.note(this, "Select a driver"))
         drivers.forEachIndexed { index, driver ->
             val row = Ui.monitorRow(this, driver.name, driver.risk, driver.event, driver.color, index == selected)
             row.setOnClickListener { selected = index; showSupervisor() }
@@ -58,7 +57,7 @@ class SupervisorActivity : Activity() {
         details.addView(Ui.pair(this, "Speed", driver.speed))
         details.addView(Ui.pair(this, "Location", driver.position))
         details.addView(Ui.space(this, 10))
-        details.addView(Ui.placeholder(this, "MAP PLACEHOLDER", "GPS map for ${driver.name} goes here", 150))
+        details.addView(Ui.placeholder(this, "MAP", "GPS map for ${driver.name} goes here", 150))
         content.addView(details, Ui.blockParams(this))
 
         val alerts = Ui.card(this)
