@@ -3,7 +3,7 @@
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
-        android:theme="@style/Theme.ESCA-3-2526-C3">
+        android:theme="@style/Theme.ESCA_3_2526_C3">
 
         <!-- Separate launcher icon, with no in-app path to the supervisor. -->
         <activity
