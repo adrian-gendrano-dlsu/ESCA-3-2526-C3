@@ -73,6 +73,11 @@ object Ui {
         background = shape(Color.argb(20, Color.red(color), Color.green(color), Color.blue(color)), c, 8)
     }
 
+    fun bigChip(c: Context, value: String, color: Int) = text(c, value, 18f, color, true).apply {
+        setPadding(dp(c, 10), dp(c, 7), dp(c, 10), dp(c, 7))
+        background = shape(Color.argb(20, Color.red(color), Color.green(color), Color.blue(color)), c, 8)
+    }
+
     fun space(c: Context, h: Int) = View(c).apply {
         layoutParams = LinearLayout.LayoutParams(1, dp(c, h))
     }
