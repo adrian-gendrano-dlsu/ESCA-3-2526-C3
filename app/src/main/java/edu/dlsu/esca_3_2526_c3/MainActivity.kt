@@ -2,14 +2,31 @@ package edu.dlsu.esca_3_2526_c3
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import java.util.UUID
+import java.text.DateFormat
+import java.util.Date
+import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
-/** Static driver dashboard. All values are examples; no camera, AI, or sync is running. */
+/** Driver interface with manually simulated alerts for testing Firebase synchronization. */
 class MainActivity : Activity() {
+    private lateinit var cloud: DemoCloud
+    private val resetHandler = Handler(Looper.getMainLooper())
+    private val statuses = linkedMapOf(
+        "Drowsiness" to "Normal", "Yawning" to "Normal",
+        "Gaze deviation" to "Normal", "Phone usage" to "Normal"
+    )
+    private val sessionId = "DEMO-" + UUID.randomUUID().toString()
+    private val sessionStarted = System.currentTimeMillis()
+    private val recent = mutableListOf<Triple<String, String, String>>()
+    private var onHome = true
     private lateinit var page: LinearLayout
     private lateinit var scroller: ScrollView
     private lateinit var homeTab: TextView
@@ -45,7 +62,55 @@ class MainActivity : Activity() {
         tabs.addView(historyTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         root.addView(tabs)
         setContentView(root)
+        cloud = DemoCloud(this)
+        cloud.onChange = { if (!isFinishing) updateVisiblePage() }
+        cloud.start()
         showHome()
+    }
+
+    private fun updateVisiblePage() { if (onHome) showHome() else showHistory() }
+
+    override fun onDestroy() {
+        resetHandler.removeCallbacksAndMessages(null)
+        cloud.stop()
+        super.onDestroy()
+    }
+
+    private fun trigger(name: String) {
+        val current = statuses[name] ?: "Normal"
+        val next = when (current) { "Normal" -> "Warning"; "Warning" -> "High"; else -> "Normal" }
+        statuses[name] = next
+        if (next != "Normal") {
+            val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
+            recent.add(0, Triple(name, time, next))
+            cloud.record(name, next, sessionId)
+        }
+        cloud.publish(statuses, sessionId, (System.currentTimeMillis()-sessionStarted)/1000)
+        updateVisiblePage()
+        if (next != "Normal") {
+            resetHandler.postDelayed({
+                if (statuses[name] == next) {
+                    statuses[name] = "Normal"
+                    cloud.publish(statuses, sessionId, (System.currentTimeMillis()-sessionStarted)/1000)
+                    updateVisiblePage()
+                }
+            }, 12000L)
+        }
+    }
+
+    private fun accountArea(target: LinearLayout) {
+        target.addView(Ui.note(this, cloud.connectionLabel))
+        val button = Button(this).apply {
+            text = if (cloud.signedIn) "Sign out  ·  ${cloud.email}" else "Sign in (Driver researcher account)"
+            isAllCaps = false
+            setOnClickListener {
+                if (cloud.signedIn) cloud.signOut() else cloud.signInDialog("driver")
+            }
+        }
+        target.addView(button)
+        if (cloud.signedIn && cloud.role != "driver") {
+            target.addView(Ui.note(this, "Driver Firebase writes require a researcher account assigned the driver role."))
+        }
     }
 
     private fun selectTab(home: Boolean) {
@@ -56,20 +121,28 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+        onHome = true
         selectTab(true)
         val overview = Ui.card(this)
-        overview.addView(Ui.bigChip(this, "LOW RISK", Ui.green))
+        overview.addView(Ui.eyebrow(this, "CURRENT SESSION"))
+        overview.addView(Ui.title(this, "Risk Level"))
+        val risk = if (statuses.values.any { it == "High" }) "HIGH" else if (statuses.values.any { it == "Warning" }) "MEDIUM" else "LOW"
+        overview.addView(Ui.bigChip(this, "$risk RISK", if (risk == "HIGH") Ui.red else if (risk == "MEDIUM") Ui.amber else Ui.green))
         overview.addView(Ui.space(this, 12))
         overview.addView(Ui.placeholder(this, "LIVE VIEW", "Driver's face preview will appear here", 150))
         overview.addView(Ui.space(this, 12))
-        overview.addView(Ui.pair(this, "Trip duration", "00:48:00"))
+        overview.addView(Ui.pair(this, "Trip duration", "${(System.currentTimeMillis()-sessionStarted)/60000} min"))
+        accountArea(overview)
         page.addView(overview, Ui.blockParams(this))
 
         val metrics = Ui.card(this)
         metrics.addView(Ui.title(this, "Your Metrics"))
         metrics.addView(Ui.eyebrow(this, "DETECTION STATUS"))
         for (name in listOf("Drowsiness", "Yawning", "Gaze deviation", "Phone usage")) {
-            metrics.addView(Ui.pair(this, name, "Normal"))
+            val row = Ui.pair(this, name, statuses[name] ?: "Normal")
+            row.setOnClickListener { trigger(name) }
+            row.contentDescription = "$name. Tap to cycle Normal, Warning, High, and simulate a Firebase event."
+            metrics.addView(row)
         }
         metrics.addView(Ui.space(this, 10))
         metrics.addView(Ui.eyebrow(this, "RAW MEASUREMENTS"))
@@ -81,13 +154,15 @@ class MainActivity : Activity() {
 
         val alerts = Ui.card(this)
         alerts.addView(Ui.title(this, "Recent Alerts"))
-        alerts.addView(Ui.alert(this, "Phone usage", "10:49 AM", "HIGH", Ui.red))
-        alerts.addView(Ui.alert(this, "Yawning", "10:30 AM", "WARNING", Ui.amber))
-        alerts.addView(Ui.alert(this, "Gaze deviation", "10:12 AM", "ⓘ INFO", Ui.blue))
+        if (recent.isEmpty()) alerts.addView(Ui.note(this, "No events yet"))
+        recent.take(5).forEach { (behavior, time, severity) ->
+            alerts.addView(Ui.alert(this, "$behavior · TEST", time, severity.uppercase(), if (severity == "High") Ui.red else Ui.amber))
+        }
         page.addView(alerts, Ui.blockParams(this))
     }
 
     private fun showHistory() {
+        onHome = false
         selectTab(false)
         val history = Ui.card(this)
         history.addView(Ui.title(this, "Session History"))
@@ -102,11 +177,15 @@ class MainActivity : Activity() {
             text = "Manually Sync Logs to Supervisor"
             isAllCaps = false
             setOnClickListener {
-                Toast.makeText(this@MainActivity, "The app cannot synchronize logs yet", Toast.LENGTH_LONG).show()
+                if (cloud.role != "driver") cloud.toast("Sign in as a driver researcher to sync.")
+                else { cloud.flush(); cloud.toast("Sync requested. Check pending count and Firebase connection.") }
             }
         }
         sync.addView(button)
-        sync.addView(Ui.note(this, "Last synced: Apr 26, 5:00 PM"))
+        sync.addView(Ui.note(this, "Last successful event sync: ${cloud.lastSyncText()}"))
+        sync.addView(Ui.note(this, "Pending simulated events: ${cloud.pendingCount}"))
+        sync.addView(Ui.note(this, cloud.connectionLabel))
+        accountArea(sync)
         page.addView(sync, Ui.blockParams(this))
     }
 }
