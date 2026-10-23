@@ -36,13 +36,12 @@ object Ui {
             if (bold) setTypeface(null, Typeface.BOLD)
         }
 
-    fun header(c: Context, title: String, subtitle: String) =
+    fun header(c: Context, title: String) =
         LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(c, 20), dp(c, 22), dp(c, 20), dp(c, 22))
             setBackgroundColor(navy)
             addView(text(c, title, 23f, white, true))
-            addView(text(c, subtitle, 12f, Color.rgb(203, 213, 225)))
         }
 
     fun blockParams(c: Context) = LinearLayout.LayoutParams(-1, -2).apply {

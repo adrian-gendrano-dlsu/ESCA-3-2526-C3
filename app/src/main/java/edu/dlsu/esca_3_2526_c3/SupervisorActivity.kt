@@ -15,7 +15,6 @@ import java.text.DateFormat
 import java.util.Date
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.TextView
 
 /** A separate launch entry. No navigation from MainActivity leads here. */
 class SupervisorActivity : Activity() {

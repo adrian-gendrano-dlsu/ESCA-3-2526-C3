@@ -47,7 +47,7 @@ class DemoCloud(private val activity: Activity) {
 
     var onChange: (() -> Unit)? = null
 
-    private fun db() = FirebaseDatabase.getInstance()
+    private fun db() = FirebaseDatabase.getInstance("https://esca-3-2526-c3-testing-default-rtdb.asia-southeast1.firebasedatabase.app")
     private fun uid() = FirebaseAuth.getInstance().currentUser!!.uid
     fun liveRef(): DatabaseReference = db().getReference("demo/drivers/driver1/live")
     fun eventsRef(): DatabaseReference = db().getReference("demo/drivers/driver1/events")
@@ -60,10 +60,17 @@ class DemoCloud(private val activity: Activity) {
         roleListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 role = snapshot.getValue(String::class.java) ?: ""
+                android.util.Log.d("FirebaseRole", "UID: ${uid()}, Role: $role, Exists: ${snapshot.exists()}")
+                if (!snapshot.exists()) toast("No role assigned to UID: ${uid()}")
                 onChange?.invoke()
                 if (role == "driver" && online) flush()
             }
-            override fun onCancelled(error: DatabaseError) { role = ""; onChange?.invoke() }
+            override fun onCancelled(error: DatabaseError) {
+                role = ""
+                android.util.Log.e("FirebaseRole", "Role read failed: ${error.message}")
+                toast("Firebase role error: ${error.message}")
+                onChange?.invoke()
+            }
         }
         roleRef!!.addValueEventListener(roleListener!!)
         connectionRef = db().getReference(".info/connected")
