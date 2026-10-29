@@ -1,6 +1,7 @@
 package edu.dlsu.esca_3_2526_c3
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -69,6 +70,9 @@ class MainActivity : Activity() {
         historyTab = Ui.tab(this, "◷  History") { showHistory() }
         tabs.addView(homeTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         tabs.addView(historyTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
+        tabs.addView(Ui.tab(this, "⚙  Settings") {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         root.addView(tabs)
         setContentView(root)
         cloud = DemoCloud(this)
