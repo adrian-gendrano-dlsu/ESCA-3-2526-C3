@@ -54,8 +54,10 @@ class SupervisorActivity : Activity() {
         setContentView(scroll)
         cloud = DemoCloud(this)
         cloud.onChange = {
-            if (cloud.role == "supervisor" && cloud.signedIn) attachLive()
-            else detachLive()
+            if (cloud.role == "supervisor" && cloud.signedIn) {
+                attachLive()
+                if (cloud.ready) cloud.registerSupervisorPush()
+            } else detachLive()
             if (!isFinishing) showSupervisor()
         }
         cloud.start()
