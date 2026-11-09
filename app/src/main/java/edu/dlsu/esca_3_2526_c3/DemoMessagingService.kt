@@ -19,7 +19,7 @@ class DemoMessagingService : FirebaseMessagingService() {
                 channel, "Simulated high-risk tests", NotificationManager.IMPORTANCE_HIGH
             ))
         }
-        val driverId = message.data["driverId"] ?: "driver1" // Current function listens to driver1 only.
+        val driverId = message.data["driverId"] ?: "" // Email-based Firebase key from the notification.
         val openDriver = Intent(this, SupervisorActivity::class.java).apply {
             putExtra("driver_id", driverId)
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -31,7 +31,7 @@ class DemoMessagingService : FirebaseMessagingService() {
         val notification = NotificationCompat.Builder(this, channel)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("SIMULATED high-risk alert")
-            .setContentText(message.data["behavior"] ?: "Driver 1 test event")
+            .setContentText(message.data["behavior"] ?: "Driver test event")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(openIntent)

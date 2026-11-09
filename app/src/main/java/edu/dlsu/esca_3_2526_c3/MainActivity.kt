@@ -293,6 +293,12 @@ class MainActivity : Activity() {
     /** Repaint only device indicators and camera snapshots without resetting the page. */
     private fun refreshDeviceStatus() {
         val state = devices.state
+        // Upload actual prototype GPS coordinates only while monitoring is active.
+        if (DriverMonitoringService.active && sessionStarted > 0L) {
+            cloud.publish(statuses, sessionId,
+                (System.currentTimeMillis() - sessionStarted).coerceAtLeast(0L) / 1000L,
+                state.latitude, state.longitude, state.speedKph, updateLocation = true)
+        }
         statusStrip?.apply {
             removeAllViews()
             val indicators = listOf(

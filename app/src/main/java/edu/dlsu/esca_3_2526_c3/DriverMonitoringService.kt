@@ -207,23 +207,26 @@ class DriverMonitoringService : Service(), TextToSpeech.OnInitListener {
     private fun publishDemo() {
         if (FirebaseApp.getApps(this).isEmpty()) return
         val user = FirebaseAuth.getInstance().currentUser ?: return
+        val email = user.email?.takeIf { it.isNotBlank() } ?: return
+        val emailKey = firebaseEmailKey(email)
         val db = FirebaseDatabase.getInstance(
             "https://esca-3-2526-c3-testing-default-rtdb.asia-southeast1.firebasedatabase.app"
         )
         // Check the Firebase role before publishing test-only driver data.
-        db.getReference("roles").child(user.uid).get().addOnSuccessListener { role ->
-            if (!active || role.getValue(String::class.java) != "driver") return@addOnSuccessListener
+        db.getReference("roles").child(emailKey).get().addOnSuccessListener { role ->
+            if (!active || role.child("uid").getValue(String::class.java) != user.uid ||
+                role.child("role").getValue(String::class.java) != "driver") return@addOnSuccessListener
             val high = statuses.values.any { it == "High" }
             val medium = statuses.values.any { it == "Warning" }
             val headline = statuses.entries.firstOrNull { it.value == "High" }
                 ?: statuses.entries.firstOrNull { it.value == "Warning" }
-            db.getReference("demo/drivers/driver1/live").setValue(mapOf(
-                "name" to "Driver 1",
+            db.getReference("demo/drivers").child(emailKey).child("live").updateChildren(mapOf(
+                "name" to (user.displayName?.takeIf { it.isNotBlank() } ?: email), "email" to email,
                 "risk" to (if (high) "High risk" else if (medium) "Medium risk" else "Low risk"),
                 "event" to (headline?.key ?: "Normal"), "statuses" to statuses.toMap(),
                 "timestampMs" to System.currentTimeMillis(), "sessionId" to sessionId,
                 "tripSeconds" to (System.currentTimeMillis() - sessionStarted).coerceAtLeast(0L) / 1000,
-                "speedKph" to 0, "simulated" to true, "source" to "manual_test"
+                "simulated" to true, "source" to "manual_test"
             ))
         }
     }

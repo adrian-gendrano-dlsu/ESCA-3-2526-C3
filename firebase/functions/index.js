@@ -5,7 +5,7 @@ admin.initializeApp({
 })
 exports.ThesisDemoHighRisk = onValueCreated(
     {
-        ref: "/demo/drivers/driver1/events/{eventId}",
+        ref: "/demo/drivers/{driverId}/events/{eventId}",
         instance: "esca-3-2526-c3-testing-default-rtdb",
         region: "asia-southeast1"
     },
@@ -24,7 +24,8 @@ async (event) => {
       data: {
         demo: "true",
         behavior: String(data.behavior || "Unknown behavior"),
-        eventId: String(data.eventId || event.params.eventId)
+        eventId: String(data.eventId || event.params.eventId),
+        driverId: String(event.params.driverId)
       },
       android: { priority: "high" }
     })

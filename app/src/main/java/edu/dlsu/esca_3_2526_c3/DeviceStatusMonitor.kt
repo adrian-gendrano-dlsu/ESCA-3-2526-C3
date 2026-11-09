@@ -20,6 +20,9 @@ class DeviceStatusMonitor(private val context: Context, private val onChange: ()
         val camera: Boolean = false,
         val sensor: Boolean = false,
         val gps: Boolean = false,
+        val latitude: Double? = null,
+        val longitude: Double? = null,
+        val speedKph: Double? = null,
         val photo: Bitmap? = null,
         val faceOffsetPercent: Int? = null // Percentage of half-frame width, not a yaw angle.
     )
@@ -123,8 +126,16 @@ class DeviceStatusMonitor(private val context: Context, private val onChange: ()
         } catch (_: Exception) { null }
 
         val offset = try { frame?.let { faceOffset(it) } } catch (_: Exception) { null }
+        val fix = sensor?.optBoolean("fix", false) == true
+        val lat = sensor?.optDouble("lat", Double.NaN) ?: Double.NaN
+        val lng = sensor?.optDouble("lng", Double.NaN) ?: Double.NaN
+        val valid = fix && lat.isFinite() && lng.isFinite() && lat in -90.0..90.0 &&
+                lng in -180.0..180.0 && !(lat == 0.0 && lng == 0.0)
+        val speed = sensor?.optDouble("kmh", Double.NaN) ?: Double.NaN
         return State(camera = frame != null, sensor = sensor != null,
-            gps = sensor?.optBoolean("fix", false) == true, photo = frame,
-            faceOffsetPercent = offset)
+            gps = valid, latitude = if (valid) lat else null,
+            longitude = if (valid) lng else null,
+            speedKph = if (valid && speed.isFinite() && speed >= 0.0) speed else null,
+            photo = frame, faceOffsetPercent = offset)
     }
 }

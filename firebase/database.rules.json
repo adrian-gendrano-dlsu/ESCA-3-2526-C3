@@ -3,26 +3,29 @@
     ".read": false,
     ".write": false,
     "roles": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
+      "$emailKey": {
+        ".read": "auth != null && auth.token.email != null && $emailKey === auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F') && data.child('uid').val() === auth.uid",
         ".write": false
       }
     },
     "demo": {
       "drivers": {
-        "driver1": {
-          ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'driver' || root.child('roles').child(auth.uid).val() === 'supervisor')",
-          ".write": "auth != null && root.child('roles').child(auth.uid).val() === 'driver'",
+        ".read": "auth != null && auth.token.email != null && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('uid').val() === auth.uid && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('role').val() === 'supervisor'",
+        "$driverId": {
+          ".read": "auth != null && auth.token.email != null && $driverId === auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F') && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('uid').val() === auth.uid && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('role').val() === 'driver'",
+          ".write": "auth != null && auth.token.email != null && $driverId === auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F') && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('uid').val() === auth.uid && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('role').val() === 'driver'",
           "events": {
-            ".indexOn": ["timestampMs"]
+            ".indexOn": [
+              "timestampMs"
+            ]
           }
         }
       }
     },
     "supervisorTokens": {
-      "$uid": {
+      "$emailKey": {
         ".read": false,
-        ".write": "auth != null && auth.uid === $uid && root.child('roles').child(auth.uid).val() === 'supervisor'"
+        ".write": "auth != null && auth.token.email != null && $emailKey === auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F') && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('uid').val() === auth.uid && root.child('roles').child(auth.token.email.toLowerCase().replace('%', '%25').replace('-', '%2D').replace('.', '-').replace('#', '%23').replace('$', '%24').replace('[', '%5B').replace(']', '%5D').replace('/', '%2F')).child('role').val() === 'supervisor'"
       }
     }
   }
