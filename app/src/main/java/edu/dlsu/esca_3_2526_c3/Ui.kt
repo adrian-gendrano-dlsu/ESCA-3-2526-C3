@@ -9,8 +9,10 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/** Presentation-only widgets. All information on screen is static example data. */
+/** Shared view builders and colors for the driver and supervisor screens.
+ */
 object Ui {
+    // Base colors used across headers, labels, risk indicators, and navigation.
     val navy = Color.rgb(15, 23, 42)
     val background = Color.rgb(245, 247, 251)
     val white = Color.WHITE
@@ -20,19 +22,38 @@ object Ui {
     val amber = Color.rgb(180, 83, 9)
     val red = Color.rgb(220, 38, 38)
 
+
+    // Night mode changes the page and card backgrounds without changing risk colors.
+    var nightMode = false
+    val canvas: Int get() = if (nightMode) Color.rgb(9, 15, 28) else background
+    val surface: Int get() = if (nightMode) Color.rgb(29, 38, 55) else white
+
+
+    /** Convert density-independent pixels to physical pixels */
     fun dp(c: Context, n: Int): Int = (n * c.resources.displayMetrics.density + 0.5f).toInt()
 
+
+    /** solid, rounded background for cards and badges. */
     private fun shape(color: Int, c: Context, radius: Int = 16): GradientDrawable =
         GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(c, radius).toFloat()
         }
 
+
+    /** label, adapting dark text colors when night mode is enabled */
     private fun text(c: Context, value: String, size: Float, color: Int, bold: Boolean = false) =
         TextView(c).apply {
             this.text = value
             textSize = size
-            setTextColor(color)
+
+            // Replace dark foreground colors so labels remain legible at night.
+            setTextColor(when {
+                nightMode && color == navy -> white
+                nightMode && color == muted -> Color.rgb(203, 213, 225)
+                else -> color
+            })
+
             if (bold) setTypeface(null, Typeface.BOLD)
         }
 
@@ -44,54 +65,77 @@ object Ui {
             addView(text(c, title, 23f, white, true))
         }
 
+
+    /** Standard full-width layout parameters */
     fun blockParams(c: Context) = LinearLayout.LayoutParams(-1, -2).apply {
         bottomMargin = dp(c, 14)
     }
 
+
+    /** Rounded content container */
     fun card(c: Context) = LinearLayout(c).apply {
         orientation = LinearLayout.VERTICAL
-        background = shape(white, c)
+        background = shape(surface, c)
         elevation = dp(c, 2).toFloat()
         setPadding(dp(c, 17), dp(c, 16), dp(c, 17), dp(c, 17))
     }
 
+
+    /** Main card heading */
     fun title(c: Context, value: String) = text(c, value, 18f, navy, true).apply {
         setPadding(0, 0, 0, dp(c, 12))
     }
 
+
+    /** Small uppercase-style section label */
     fun eyebrow(c: Context, value: String) = text(c, value, 11f, muted, true).apply {
         setPadding(0, 0, 0, dp(c, 8))
         letterSpacing = 0.09f
     }
 
+
+    /** Secondary text */
     fun note(c: Context, value: String) = text(c, value, 12f, muted).apply {
         setPadding(0, dp(c, 6), 0, dp(c, 10))
     }
 
+
+    /** Compact colored status label */
     fun chip(c: Context, value: String, color: Int) = text(c, value, 12f, color, true).apply {
         setPadding(dp(c, 10), dp(c, 7), dp(c, 10), dp(c, 7))
         background = shape(Color.argb(20, Color.red(color), Color.green(color), Color.blue(color)), c, 8)
     }
 
+
+    /** Larger status label */
     fun bigChip(c: Context, value: String, color: Int) = text(c, value, 18f, color, true).apply {
         setPadding(dp(c, 10), dp(c, 7), dp(c, 10), dp(c, 7))
         background = shape(Color.argb(20, Color.red(color), Color.green(color), Color.blue(color)), c, 8)
     }
 
+
+    /** Invisible vertical spacer */
     fun space(c: Context, h: Int) = View(c).apply {
         layoutParams = LinearLayout.LayoutParams(1, dp(c, h))
     }
 
+
+    /** Centered temporary panel for features that do not yet have live content. */
     fun placeholder(c: Context, heading: String, detail: String, height: Int) =
         LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = shape(Color.rgb(232, 239, 248), c, 12)
+
+            // Use a darker placeholder surface in night mode.
+            background = shape(if (nightMode) Color.rgb(44, 55, 72) else Color.rgb(232, 239, 248), c, 12)
+
             addView(text(c, heading, 15f, navy, true))
             addView(text(c, detail, 12f, muted))
             layoutParams = LinearLayout.LayoutParams(-1, dp(c, height))
         }
 
+
+    /** Two-column label/value row */
     fun pair(c: Context, label: String, value: String) = LinearLayout(c).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -100,6 +144,8 @@ object Ui {
         addView(text(c, value, 14f, navy, true))
     }
 
+
+    /** Alert row */
     fun alert(c: Context, label: String, time: String, level: String, color: Int) =
         LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -114,6 +160,8 @@ object Ui {
             addView(chip(c, level, color))
         }
 
+
+    /** Session-history row */
     fun session(c: Context, date: String, duration: String, alerts: String) =
         LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -128,6 +176,8 @@ object Ui {
             addView(chip(c, alerts, blue))
         }
 
+
+    /** Clickable bottom-navigation label */
     fun tab(c: Context, label: String, onTap: () -> Unit) =
         TextView(c).apply {
             text = label
@@ -137,12 +187,19 @@ object Ui {
             isClickable = true
         }
 
+
+    /** Visually distinguish the selected navigation tab from inactive tabs. */
     fun activeTab(view: TextView, active: Boolean) {
-        view.setTextColor(if (active) blue else muted)
+        // Use brighter text for the active tab when night mode is enabled.
+        view.setTextColor(if (active) (if (nightMode) Color.rgb(147, 197, 253) else blue) else (if (nightMode) Color.LTGRAY else muted))
         view.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
-        view.background = shape(if (active) Color.rgb(235, 241, 253) else white, view.context, 12)
+
+        // Match the selected-tab background to the current theme.
+        view.background = shape(if (active) (if (nightMode) Color.rgb(45, 59, 85) else Color.rgb(235, 241, 253)) else surface, view.context, 12)
     }
 
+
+    /** Supervisor driver-list row */
     fun monitorRow(
         c: Context, name: String, risk: String, event: String, color: Int, selected: Boolean
     ) = LinearLayout(c).apply {
