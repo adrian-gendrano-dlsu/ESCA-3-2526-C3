@@ -24,9 +24,10 @@ import java.net.Inet4Address
 import java.net.URL
 import java.net.URLEncoder
 
-/** Researcher-only settings. Existing device preference keys and request paths are preserved. */
 class SettingsActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("device_setup_v1", Context.MODE_PRIVATE) }
+
+    // Input references are kept so tests and monitoring state can read or disable them.
     private lateinit var ssid: EditText
     private lateinit var password: EditText
     private lateinit var cameraUrl: EditText
@@ -34,13 +35,21 @@ class SettingsActivity : Activity() {
     private lateinit var pollMs: EditText
     private lateinit var readOnlyNote: TextView
     private lateinit var snapshot: ImageView
+
+    // Only configuration inputs and test buttons belong in this list.
     private val controls = mutableListOf<View>()
 
+    // Each test owns its own badge and explanatory message.
     private data class TestViews(val indicator: TextView, val detail: TextView)
 
+    /** Build the developer-only screen and restore the saved device configuration. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Reject direct launches when the hidden developer mode is off.
         if (!MainActivity.developerSessionEnabled) { finish(); return }
+
+        // Monitoring state determines whether the configuration is read-only.
         DriverMonitoringService.restore(this)
         Ui.nightMode = getSharedPreferences("driver_display", MODE_PRIVATE).getBoolean("night", false)
         window.statusBarColor = Ui.navy
@@ -62,12 +71,19 @@ class SettingsActivity : Activity() {
         root.addView(scroller, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
 
+        // This note changes when monitoring starts or stops.
+        readOnlyNote = Ui.note(this, "Monitoring inactive. Settings can be written to.")
+        body.addView(readOnlyNote)
+
+        // CONNECTION: URLs and hardware checks.
         val endpoints = Ui.card(this)
         endpoints.addView(Ui.title(this, "Connection"))
         endpoints.addView(Ui.note(this, "Camera base URL"))
         cameraUrl = field("Camera base URL",
             prefs.getString("camera_url", "http://192.168.4.1") ?: "http://192.168.4.1")
         endpoints.addView(cameraUrl)
+
+        // Store a valid base URL as soon as it changes.
         autoSave(cameraUrl) { prefs.edit().putString("camera_url", normalizedBase(it)).apply() }
 
         endpoints.addView(Ui.note(this, "Sensor base URL"))
@@ -77,11 +93,13 @@ class SettingsActivity : Activity() {
             prefs.edit().putString("sensor_url", normalizedBase(it, optional = true)).apply()
         }
 
+        // Every test displays its result next to the action that ran it.
         testAction(endpoints, "Find test board on Wi-Fi") { discoverBoard(it) }
         testAction(endpoints, "Check camera status") { checkStatus(it) }
         testAction(endpoints, "Test camera photo") { testSnapshot(it) }
         testAction(endpoints, "Test MPU6050") { testSensors(it) }
 
+        // The photo area stays empty until a JPEG test succeeds.
         snapshot = ImageView(this).apply {
             adjustViewBounds = true
             minimumHeight = Ui.dp(this@SettingsActivity, 90)
@@ -90,14 +108,17 @@ class SettingsActivity : Activity() {
         endpoints.addView(snapshot, LinearLayout.LayoutParams(-1, -2))
         body.addView(endpoints, Ui.blockParams(this))
 
+        // ALERTS: describe the currently fixed behavior without adding fake controls.
         val alerts = Ui.card(this)
         alerts.addView(Ui.title(this, "Alerts"))
         body.addView(alerts, Ui.blockParams(this))
 
+        // MODELS: informational only until model integration is available.
         val models = Ui.card(this)
         models.addView(Ui.title(this, "Models"))
         body.addView(models, Ui.blockParams(this))
 
+        // ADVANCED: Wi-Fi provisioning and a future polling preference.
         val advanced = Ui.card(this)
         advanced.addView(Ui.title(this, "Advanced"))
         advanced.addView(Ui.note(this, "Camera Wi-Fi name"))
@@ -116,6 +137,7 @@ class SettingsActivity : Activity() {
         }
         advanced.addView(password)
 
+        // Do not save the new Wi-Fi password in SharedPreferences
         testAction(advanced, "Send Wi-Fi credentials") { provisionCamera(it) }
 
         advanced.addView(Ui.note(this, "Future sensor polling interval (ms)"))
@@ -123,6 +145,7 @@ class SettingsActivity : Activity() {
             inputType = InputType.TYPE_CLASS_NUMBER
         }
         advanced.addView(pollMs)
+
         autoSave(pollMs) {
             val interval = it.toInt()
             require(interval in 200..60000) { "Use 200–60000 ms" }
@@ -130,6 +153,7 @@ class SettingsActivity : Activity() {
         }
         body.addView(advanced, Ui.blockParams(this))
 
+        // Bottom navigation mirrors the driver screen
         val tabs = LinearLayout(this).apply {
             setBackgroundColor(Ui.surface)
             setPadding(Ui.dp(this@SettingsActivity, 12), Ui.dp(this@SettingsActivity, 8),
@@ -149,49 +173,53 @@ class SettingsActivity : Activity() {
         applyReadOnlyState()
     }
 
+    /** Recheck access and monitoring state whenever Settings returns to the foreground. */
     override fun onResume() {
         super.onResume()
         if (!MainActivity.developerSessionEnabled) { finish(); return }
         if (::readOnlyNote.isInitialized) applyReadOnlyState()
     }
 
+    /** Reuse MainActivity and request its destination tab */
     private fun navigate(destination: String) {
         startActivity(Intent(this, MainActivity::class.java).putExtra("driver_tab", destination)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         finish()
     }
 
+    /** Disable edits and tests while monitoring */
     private fun applyReadOnlyState() {
         val monitoring = DriverMonitoringService.active
         controls.forEach { it.isEnabled = !monitoring }
         readOnlyNote.text = if (monitoring)
             "Monitoring is active. Settings are read-only until monitoring stops."
-        else "Changes are saved automatically when valid."
+        else "Monitoring inactive. Settings can be written to."
     }
 
+    /** single-line field */
     private fun field(hintText: String, initial: String) = EditText(this).apply {
         hint = hintText
         setSingleLine(true)
         setText(initial)
         textSize = 15f
         setSelectAllOnFocus(true)
-
         if (Ui.nightMode) {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
         }
-
         setPadding(Ui.dp(this@SettingsActivity, 8), Ui.dp(this@SettingsActivity, 10),
             Ui.dp(this@SettingsActivity, 8), Ui.dp(this@SettingsActivity, 10))
         controls.add(this)
     }
 
-    /** Valid edits persist immediately. Incomplete URLs remain in the field until corrected. */
+    /** autosave where incomplete URLs remain in field until corrected */
     private fun autoSave(input: EditText, save: (String) -> Unit) {
         fun persist() {
             try { save(input.text.toString()); input.error = null }
             catch (e: Exception) { if (!input.hasFocus()) input.error = e.message ?: "Invalid setting" }
         }
+
+        // Save valid changes on typing and validate again when focus leaves the field.
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -200,6 +228,7 @@ class SettingsActivity : Activity() {
         input.setOnFocusChangeListener { _, focused -> if (!focused) persist() }
     }
 
+    /** register test button so read-only mode can disable it. */
     private fun action(label: String, callback: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
@@ -207,8 +236,9 @@ class SettingsActivity : Activity() {
         controls.add(this)
     }
 
-    /** Result badge and explanation remain beside/below the individual test, never in one shared line. */
+    /** Result badge and explanation */
     private fun testAction(parent: LinearLayout, label: String, callback: (TestViews) -> Unit) {
+        // Badge is independent of the detailed result text below the row.
         val indicator = TextView(this).apply {
             text = "○ Not run"
             textSize = 12f
@@ -224,6 +254,7 @@ class SettingsActivity : Activity() {
         parent.addView(detail)
     }
 
+    /** sync text, color, accessibility description */
     private fun show(result: TestViews, message: String, success: Boolean? = null) {
         result.indicator.text = when (success) {
             true -> "● Passed"
@@ -239,6 +270,7 @@ class SettingsActivity : Activity() {
         result.indicator.contentDescription = "${result.indicator.text}. $message"
     }
 
+    /** Accept only HTTP(S) base addresses, without paths or embedded credentials. */
     private fun normalizedBase(text: String, optional: Boolean = false): String {
         val value = text.trim().trimEnd('/')
         if (optional && value.isEmpty()) return ""
@@ -250,6 +282,7 @@ class SettingsActivity : Activity() {
         return value
     }
 
+    /** Run network operations off the UI thread and report errors on the UI thread. */
     private fun onWorker(result: TestViews, label: String, operation: () -> Unit) {
         show(result, "$label …")
         Thread {
@@ -263,6 +296,8 @@ class SettingsActivity : Activity() {
     /** Discover the actual Wi-Fi gateway, then identify supported prototype HTTP endpoints. */
     private fun discoverBoard(result: TestViews) {
         val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        // Inspect Wi-Fi default gateways; do not assume the prototype uses a fixed IP.
         val gateways = manager.allNetworks.filter { network ->
             manager.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
         }.mapNotNull { network ->
@@ -271,12 +306,15 @@ class SettingsActivity : Activity() {
             }?.gateway?.hostAddress
         }.distinct()
         if (gateways.isEmpty()) {
-            show(result, "Connect to the ESP32 Wi-Fi and try again.", false)
+            show(result, "Connect to the prototype Wi-Fi and try again.", false)
             return
         }
-        onWorker(result, "Finding ESP32") {
+
+        onWorker(result, "Finding prototype") {
             var camera: String? = null
             var sensor: String? = null
+
+            // Probe only endpoints the prototype already supports.
             for (ip in gateways) {
                 val base = "http://$ip"
                 if (camera == null) {
@@ -288,6 +326,8 @@ class SettingsActivity : Activity() {
                     if (response != null && (response.has("fix") || response.has("lat"))) sensor = base
                 }
             }
+
+            // Update fields only for endpoints that actually responded as expected.
             runOnUiThread {
                 camera?.let { cameraUrl.setText(it) }
                 sensor?.let { sensorUrl.setText(it) }
@@ -307,6 +347,7 @@ class SettingsActivity : Activity() {
     }
 
     /** Use actual Wi-Fi Network. */
+    // Bind requests to Wi-Fi when available, even if mobile data is also connected.
     private fun connect(url: String, method: String = "GET", form: String? = null): HttpURLConnection {
         val target = URL(url)
         val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -318,6 +359,8 @@ class SettingsActivity : Activity() {
         connection.readTimeout = 4000
         connection.requestMethod = method
         connection.useCaches = false
+
+        // Provisioning sends URL-encoded form fields in the request body.
         if (form != null) {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
@@ -326,6 +369,7 @@ class SettingsActivity : Activity() {
         return connection
     }
 
+    /** Read a bounded response and always release the HTTP connection. */
     private fun requestText(url: String, method: String = "GET", form: String? = null): String {
         val connection = connect(url, method, form)
         try {
@@ -337,9 +381,11 @@ class SettingsActivity : Activity() {
         } finally { connection.disconnect() }
     }
 
+    /** Validate and submit new camera access-point credentials to the ESP32. */
     private fun provisionCamera(result: TestViews) {
         val newSsid = ssid.text.toString().trim()
         val newPassword = password.text.toString()
+
         if (!Regex("[A-Za-z0-9_-]{3,32}").matches(newSsid)) {
             show(result, "Wi-Fi name must contain 3–32 letters, numbers, hyphens or underscores.", false); return
         }
@@ -348,6 +394,8 @@ class SettingsActivity : Activity() {
         }
         val base = try { normalizedBase(cameraUrl.text.toString()) }
         catch (e: Exception) { show(result, "Invalid camera URL. ${e.message}", false); return }
+
+        // Never send the password until both fields and the camera URL are valid.
         onWorker(result, "Provisioning camera") {
             val form = "ssid=" + URLEncoder.encode(newSsid, "UTF-8") +
                     "&password=" + URLEncoder.encode(newPassword, "UTF-8")
@@ -361,6 +409,7 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /** Check the camera initialization state reported by /api/status. */
     private fun checkStatus(result: TestViews) {
         val base = try { normalizedBase(cameraUrl.text.toString()) }
         catch (e: Exception) { show(result, "Invalid camera URL. ${e.message}", false); return }
@@ -373,6 +422,7 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /** Clear an old image before requesting and decoding a fresh JPEG. */
     private fun testSnapshot(result: TestViews) {
         snapshot.setImageDrawable(null)
         val base = try { normalizedBase(cameraUrl.text.toString()) }
@@ -392,6 +442,7 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /** Show the values actually returned by the sensor endpoint. */
     private fun testSensors(result: TestViews) {
         val base = try { normalizedBase(sensorUrl.text.toString(), optional = true) }
         catch (e: Exception) { show(result, "Invalid sensor URL. ${e.message}", false); return }
