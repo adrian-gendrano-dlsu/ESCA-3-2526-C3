@@ -502,7 +502,7 @@ class MainActivity : Activity() {
         }
     }
 
-    /** A dedicated screen for Firebase email/password sign-in and registration. */
+    /** Dedicated screen for Firebase email/password sign-in and registration. */
     private fun showAccount() {
         onHome = false
         onAccount = true
@@ -513,9 +513,9 @@ class MainActivity : Activity() {
 
         if (cloud.signedIn) {
             account.addView(Ui.note(this, "Signed in as ${cloud.email}"))
-            account.addView(Ui.pair(this, "Account role", cloud.role.ifBlank { "Awaiting approval" }))
+            account.addView(Ui.pair(this, "Account role", cloud.role.ifBlank { "No role" }))
             account.addView(Ui.note(this, cloud.connectionLabel))
-            account.addView(Ui.note(this, "Cloud monitoring requires an account approved for the driver role."))
+            account.addView(Ui.note(this, "Cloud monitoring requires an account with the driver role."))
             account.addView(Button(this).apply {
                 text = "Sign out"
                 isAllCaps = false
@@ -628,8 +628,6 @@ class MainActivity : Activity() {
                     }
                 }
             })
-            if (signingUp) account.addView(Ui.note(this,
-                "New accounts need researcher approval before they can synchronize driver data."))
         }
         page.addView(account, Ui.blockParams(this))
     }

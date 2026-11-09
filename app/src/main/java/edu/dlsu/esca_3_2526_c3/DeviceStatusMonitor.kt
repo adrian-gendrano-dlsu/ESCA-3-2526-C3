@@ -90,10 +90,12 @@ class DeviceStatusMonitor(private val context: Context, private val onChange: ()
     /** Estimate the horizontal position of the visible face from one JPEG snapshot. */
     private fun faceOffset(frame: Bitmap): Int? {
         if (frame.width < 2 || frame.height < 2) return null
+
         val width = (minOf(frame.width, 640) / 2) * 2 // FaceDetector requires even width.
         val height = (frame.height.toDouble() * width / frame.width).roundToInt().coerceAtLeast(2)
         val resized = Bitmap.createScaledBitmap(frame, width, height, false)
         val rgb565 = resized.copy(Bitmap.Config.RGB_565, false)
+
         try {
             val faces = arrayOfNulls<FaceDetector.Face>(1)
             if (FaceDetector(width, height, 1).findFaces(rgb565, faces) == 0) return null

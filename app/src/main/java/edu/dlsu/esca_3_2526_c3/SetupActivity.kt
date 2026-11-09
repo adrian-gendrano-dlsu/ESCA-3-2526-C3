@@ -20,7 +20,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import kotlin.math.abs
 
-/** A phone-side setup guide. The 5-second pose check does not train a detection model. */
+/** Setup guide */
 class SetupActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("driver_setup_v1", Context.MODE_PRIVATE) }
     private val handler = Handler(Looper.getMainLooper())
@@ -44,11 +44,14 @@ class SetupActivity : Activity() {
     private val timer = object : Runnable {
         override fun run() {
             if (!runningCheck) return
+
             val remaining = (checkEnds - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
             progress?.progress = (5000L - remaining).toInt()
+
             countdown?.text = if (remaining > 0L)
                 "Look straight ahead for 5 seconds · ${(remaining + 999L) / 1000L} s remaining"
             else "Five seconds completed"
+
             if (remaining > 0L) handler.postDelayed(this, 100L)
             else {
                 runningCheck = false
@@ -135,7 +138,7 @@ class SetupActivity : Activity() {
         feedback = null
         content.removeAllViews()
         content.addView(Ui.title(this, if (alignment) "Camera alignment" else "First-time setup"))
-        content.addView(Ui.note(this, "Step ${step + 1} of 5 · Notifications → DMS-NET → Test devices → Calibrate → Done"))
+        content.addView(Ui.note(this, "Step ${step + 1} of 5"))
         content.addView(Ui.space(this, 12))
         if (alignment) showAlignment() else when (step) {
             0 -> showNotifications()
@@ -153,7 +156,7 @@ class SetupActivity : Activity() {
     private fun showNotifications() {
         val card = Ui.card(this)
         card.addView(Ui.title(this, "Allow notifications"))
-        card.addView(Ui.note(this, "Notifications keep the monitoring reminder and simulated HIGH alerts visible."))
+        card.addView(Ui.note(this, "Notifications keep the reminder and HIGH alerts visible."))
         val granted = Build.VERSION.SDK_INT < 33 ||
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         card.addView(Ui.note(this, if (granted) "Notifications are permitted." else "Notifications are not yet permitted."))
@@ -177,7 +180,6 @@ class SetupActivity : Activity() {
     private fun showDevices() {
         val card = Ui.card(this)
         card.addView(Ui.title(this, "Test the devices"))
-        card.addView(Ui.note(this, "Checking the configured camera and sensor endpoints. The board may need a few seconds."))
         connections = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         card.addView(connections)
         card.addView(button("Run tests again") {
@@ -193,8 +195,7 @@ class SetupActivity : Activity() {
     private fun showCalibration() {
         val card = Ui.card(this)
         card.addView(Ui.title(this, "Camera calibration"))
-        card.addView(Ui.note(this, "Look straight ahead for 5 seconds"))
-        card.addView(Ui.note(this, "Keep your face fully visible and the phone steady. The camera sends periodic snapshots."))
+        card.addView(Ui.note(this, "Look straight ahead for 5 seconds. Keep your face fully visible and the phone steady."))
         preview = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         card.addView(preview)
         offsetLabel = Ui.note(this, "Waiting for a camera picture…")
@@ -224,14 +225,17 @@ class SetupActivity : Activity() {
         val card = Ui.card(this)
         card.addView(Ui.title(this, "Center your face"))
         card.addView(Ui.note(this, "Move the camera until your face is near the picture center."))
+
         preview = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         card.addView(preview)
+
         offsetLabel = Ui.note(this, "Waiting for a camera picture…")
         card.addView(offsetLabel)
+
         card.addView(Ui.note(this, "Left                         Center                         Right"))
         offsetMeter = SeekBar(this).apply { max = 200; progress = 100; isEnabled = false }
         card.addView(offsetMeter)
-        card.addView(Ui.note(this, "Offset is estimated from the face position in a JPEG. It is not a head-yaw angle in degrees."))
+
         card.addView(button("Back to calibration") { alignment = false; render() })
         content.addView(card, Ui.blockParams(this))
         refreshDeviceViews()
@@ -252,7 +256,7 @@ class SetupActivity : Activity() {
     private fun showDone() {
         val card = Ui.card(this)
         card.addView(Ui.title(this, "Setup done"))
-        card.addView(Ui.note(this, "The 5-second alignment guide is complete. Detection-model calibration will be integrated separately."))
+        card.addView(Ui.note(this, "5-second alignment guide complete"))
         card.addView(button("Finish setup") {
             prefs.edit().putBoolean("complete", true).apply()
             finish()

@@ -137,7 +137,7 @@ class LauncherActivity : Activity() {
                     "supervisor" -> SupervisorActivity::class.java
                     else -> null
                 }
-                if (destination == null) showMessage("This account has no assigned driver or supervisor role. Contact the researchers, then check again.")
+                if (destination == null) showMessage("This account has no assigned driver or supervisor role")
                 else {
                     startActivity(Intent(this, destination))
                     finish()
