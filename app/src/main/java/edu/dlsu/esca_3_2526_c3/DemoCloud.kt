@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -19,9 +20,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
-/** A manually provisioned, role-restricted Firebase test space. Not participant data. */
+/** Firebase disallows periods and other punctuation in path keys; escape them reversibly. */
+fun firebaseEmailKey(email: String): String = email.trim().lowercase(Locale.ROOT)
+    .replace("%", "%25").replace("-", "%2D").replace(".", "-").replace("#", "%23")
+    .replace("$", "%24").replace("[", "%5B").replace("]", "%5D")
+    .replace("/", "%2F")
+
 class DemoCloud(private val activity: Activity) {
     private val prefs = activity.getSharedPreferences("firebase_demo_v1", Context.MODE_PRIVATE)
     private var connectionRef: DatabaseReference? = null
@@ -49,13 +56,17 @@ class DemoCloud(private val activity: Activity) {
 
     private fun db() = FirebaseDatabase.getInstance("https://esca-3-2526-c3-testing-default-rtdb.asia-southeast1.firebasedatabase.app")
     private fun uid() = FirebaseAuth.getInstance().currentUser!!.uid
-    fun liveRef(): DatabaseReference = db().getReference("demo/drivers/driver1/live")
-    fun eventsRef(): DatabaseReference = db().getReference("demo/drivers/driver1/events")
+
+    // Each driver writes to a Firebase branch owned by that signed-in account.
+    private fun driverId() = firebaseEmailKey(email)
+    fun driversRef(): DatabaseReference = db().getReference("demo/drivers")
+    fun liveRef(driverId: String = driverId()): DatabaseReference = driversRef().child(driverId).child("live")
+    fun eventsRef(driverId: String = driverId()): DatabaseReference = driversRef().child(driverId).child("events")
 
     fun start() {
         if (!configured) { onChange?.invoke(); return }
         val auth = FirebaseAuth.getInstance()
-        if (auth.currentUser == null) { onChange?.invoke(); return }
+        if (auth.currentUser?.email.isNullOrBlank()) { onChange?.invoke(); return }
         roleRef = db().getReference("roles").child(uid())
         roleListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -96,12 +107,17 @@ class DemoCloud(private val activity: Activity) {
     fun signInDialog(expectedRole: String) {
         if (!configured) { toast("Add app/google-services.json first, then rebuild."); return }
         val emailInput = EditText(activity).apply { hint = "Researcher email"; inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS }
-        val passInput = EditText(activity).apply { hint = "Password"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        val passInput = EditText(activity).apply {
+            hint = "Password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            transformationMethod = PasswordTransformationMethod.getInstance()
+        }
         val layout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 10, 36, 5)
             addView(emailInput); addView(passInput)
         }
+
         AlertDialog.Builder(activity).setTitle("Sign in as $expectedRole")
             .setMessage("Use an account created in Firebase Authentication and assigned the '$expectedRole' role.")
             .setView(layout)
@@ -146,24 +162,43 @@ class DemoCloud(private val activity: Activity) {
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.reversed()
     }
 
-    fun publish(statuses: Map<String, String>, sessionId: String, tripSeconds: Long) {
-        if (!ready || role != "driver") return
+    fun publish(statuses: Map<String, String>, sessionId: String, tripSeconds: Long,
+                latitude: Double? = null, longitude: Double? = null, speedKph: Double? = null,
+                updateLocation: Boolean = false, locationSource: String? = null) {
+        if (!ready || role != "driver" || email.isBlank()) return
         val severe = statuses.values.any { it == "High" }
         val medium = statuses.values.any { it == "Warning" }
         val headline = statuses.entries.firstOrNull { it.value == "High" }
             ?: statuses.entries.firstOrNull { it.value == "Warning" }
-        liveRef().setValue(mapOf(
-            "name" to "Driver 1", "risk" to (if (severe) "High risk" else if (medium) "Medium risk" else "Low risk"),
+        val changes = mutableMapOf<String, Any?>(
+            "name" to (FirebaseAuth.getInstance().currentUser?.displayName?.takeIf { it.isNotBlank() }
+                ?: email), "email" to email,
+            "risk" to (if (severe) "High risk" else if (medium) "Medium risk" else "Low risk"),
             "event" to (headline?.key ?: "Normal"), "statuses" to statuses,
             "timestampMs" to System.currentTimeMillis(), "sessionId" to sessionId,
-            "tripSeconds" to tripSeconds, "speedKph" to 0,
-            "simulated" to true, "source" to "manual_test"
-        ))
+            "tripSeconds" to tripSeconds, "simulated" to true, "source" to "manual_test"
+        )
+        // Only device polling replaces GPS data. Manual alerts preserve the last measured fix.
+        if (updateLocation) {
+            changes["lat"] = latitude
+            changes["lng"] = longitude
+            changes["locationTimestampMs"] = if (latitude != null && longitude != null) System.currentTimeMillis() else null
+            changes["speedKph"] = speedKph
+            changes["locationSource"] = if (latitude != null && longitude != null) locationSource else null
+        }
+        liveRef().updateChildren(changes)
+    }
+
+    /** Remove a previously entered test location when monitoring is not running. */
+    fun clearLocation() {
+        if (ready && role == "driver") liveRef().updateChildren(mapOf<String, Any?>(
+            "lat" to null, "lng" to null, "locationTimestampMs" to null,
+            "speedKph" to null, "locationSource" to null))
     }
 
     private var flushing = false
     fun flush() {
-        if (!ready || role != "driver" || flushing) return
+        if (!ready || role != "driver" || flushing || email.isBlank()) return
         val arr = readPending()
         if (arr.length() == 0) { onChange?.invoke(); return }
         val event = arr.optJSONObject(0) ?: return
@@ -196,7 +231,7 @@ class DemoCloud(private val activity: Activity) {
     fun lastSyncText() = if (lastSync == 0L) "Never" else DateFormat.getDateTimeInstance().format(Date(lastSync))
 
     fun registerSupervisorPush() {
-        if (!ready || role != "supervisor") return
+        if (!ready || role != "supervisor" || email.isBlank()) return
         FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
             // Restrict registration in database rules to verified supervisor accounts.
             db().getReference("supervisorTokens").child(uid()).setValue(token)
