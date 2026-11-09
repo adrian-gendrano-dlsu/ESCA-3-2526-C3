@@ -213,9 +213,8 @@ class DriverMonitoringService : Service(), TextToSpeech.OnInitListener {
             "https://esca-3-2526-c3-testing-default-rtdb.asia-southeast1.firebasedatabase.app"
         )
         // Check the Firebase role before publishing test-only driver data.
-        db.getReference("roles").child(emailKey).get().addOnSuccessListener { role ->
-            if (!active || role.child("uid").getValue(String::class.java) != user.uid ||
-                role.child("role").getValue(String::class.java) != "driver") return@addOnSuccessListener
+        db.getReference("roles").child(user.uid).get().addOnSuccessListener { role ->
+            if (!active || role.getValue(String::class.java) != "driver") return@addOnSuccessListener
             val high = statuses.values.any { it == "High" }
             val medium = statuses.values.any { it == "Warning" }
             val headline = statuses.entries.firstOrNull { it.value == "High" }

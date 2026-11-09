@@ -28,7 +28,7 @@ class SupervisorActivity : Activity() {
     private data class Driver(
         val id: String, val name: String, val risk: String, val event: String,
         val tripSeconds: Long, val speedKph: Double?, val lat: Double?, val lng: Double?,
-        val locationTime: Long, val lastUpdate: Long
+        val locationTime: Long, val locationSource: String?, val lastUpdate: Long
     )
 
     private val offlineAfterMs = 90_000L // The foreground driver service reports every 30 seconds.
@@ -132,6 +132,7 @@ class SupervisorActivity : Activity() {
                         live.child("speedKph").getValue(Double::class.java),
                         if (valid) lat else null, if (valid) lng else null,
                         live.child("locationTimestampMs").getValue(Long::class.java) ?: 0L,
+                        live.child("locationSource").getValue(String::class.java),
                         live.child("timestampMs").getValue(Long::class.java) ?: 0L
                     )
                 }.sortedBy { it.name.lowercase(Locale.ROOT) }
@@ -296,29 +297,36 @@ class SupervisorActivity : Activity() {
             content.addView(Ui.note(this, "Waiting for this driver's first Firebase update."))
             return
         }
+
         val details = Ui.card(this)
         details.addView(Ui.title(this, driver.name))
         val offline = isOffline(driver)
         details.addView(Ui.pair(this, "Connection", if (offline) "Offline" else "Receiving updates"))
+
         ageLabels[id] = Ui.note(this, "").also { details.addView(it) }
         details.addView(Ui.pair(this, "Risk", if (offline) "Last known · ${Ui.riskLevel(driver.risk)}"
         else Ui.riskLevel(driver.risk)))
+
         details.addView(Ui.pair(this, "Current status", driver.event))
         details.addView(Ui.pair(this, "Driving time", "${driver.tripSeconds / 60} min ${driver.tripSeconds % 60} s (simulated)"))
         details.addView(Ui.pair(this, "Speed", driver.speedKph?.let {
             String.format(Locale.US, "%.1f km/h", it)
         } ?: "Unavailable"))
+
         details.addView(Ui.title(this, "Driver Location"))
         val lat = driver.lat
         val lng = driver.lng
         if (lat == null || lng == null || driver.locationTime <= 0L) {
-            details.addView(Ui.note(this, "No GPS coordinates from the prototype yet."))
+            details.addView(Ui.note(this, "No location coordinates available yet."))
         } else {
             val locationAge = (System.currentTimeMillis() - driver.locationTime).coerceAtLeast(0L)
+            val locationLabel = if (driver.locationSource == "manual") "manual test location" else "GPS position"
+
             details.addView(Ui.note(this, if (locationAge > 60_000L)
-                "Last known GPS position · ${locationAge / 1000} s old" else "Latest GPS position"))
+                "Last known $locationLabel · ${locationAge / 1000} s old" else "Latest $locationLabel"))
             details.addView(Ui.pair(this, "Coordinates",
                 String.format(Locale.US, "%.6f, %.6f", lat, lng)))
+
             // OpenStreetMap's interactive embedded map, centered on *measured* GPS only.
             val bbox = String.format(Locale.US, "%.5f%%2C%.5f%%2C%.5f%%2C%.5f",
                 lng - 0.006, lat - 0.004, lng + 0.006, lat + 0.004)
@@ -327,14 +335,16 @@ class SupervisorActivity : Activity() {
                 settings.javaScriptEnabled = true // Required by OpenStreetMap's embedded map.
                 webViewClient = WebViewClient()
             }.also { mapView = it }
+
             // Reuse the same WebView as status timestamps change, avoiding map reloads.
             (map.parent as? ViewGroup)?.removeView(map)
             if (mapPosition != Pair(lat, lng)) {
                 mapPosition = Pair(lat, lng)
                 map.loadUrl("https://www.openstreetmap.org/export/embed.html?bbox=$bbox&layer=mapnik&marker=$marker")
             }
+
             details.addView(map, LinearLayout.LayoutParams(-1, Ui.dp(this, 230)))
-            details.addView(Ui.note(this, "Map © OpenStreetMap contributors · requires internet"))
+            details.addView(Ui.note(this, "Map © OpenStreetMap"))
         }
         content.addView(details, Ui.blockParams(this))
         val alerts = Ui.card(this)

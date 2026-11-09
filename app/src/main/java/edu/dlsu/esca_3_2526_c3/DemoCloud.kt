@@ -66,12 +66,12 @@ class DemoCloud(private val activity: Activity) {
         if (!configured) { onChange?.invoke(); return }
         val auth = FirebaseAuth.getInstance()
         if (auth.currentUser?.email.isNullOrBlank()) { onChange?.invoke(); return }
-        roleRef = db().getReference("roles").child(firebaseEmailKey(email))
+        roleRef = db().getReference("roles").child(uid())
         roleListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                role = snapshot.child("role").getValue(String::class.java) ?: ""
+                role = snapshot.getValue(String::class.java) ?: ""
                 android.util.Log.d("FirebaseRole", "UID: ${uid()}, Role: $role, Exists: ${snapshot.exists()}")
-                if (!snapshot.exists()) toast("No role assigned to email: $email")
+                if (!snapshot.exists()) toast("No role assigned to UID: ${uid()}")
                 onChange?.invoke()
                 if (role == "driver" && online) flush()
             }
@@ -158,7 +158,7 @@ class DemoCloud(private val activity: Activity) {
 
     fun publish(statuses: Map<String, String>, sessionId: String, tripSeconds: Long,
                 latitude: Double? = null, longitude: Double? = null, speedKph: Double? = null,
-                updateLocation: Boolean = false) {
+                updateLocation: Boolean = false, locationSource: String? = null) {
         if (!ready || role != "driver" || email.isBlank()) return
         val severe = statuses.values.any { it == "High" }
         val medium = statuses.values.any { it == "Warning" }
@@ -178,8 +178,16 @@ class DemoCloud(private val activity: Activity) {
             changes["lng"] = longitude
             changes["locationTimestampMs"] = if (latitude != null && longitude != null) System.currentTimeMillis() else null
             changes["speedKph"] = speedKph
+            changes["locationSource"] = if (latitude != null && longitude != null) locationSource else null
         }
         liveRef().updateChildren(changes)
+    }
+
+    /** Remove a previously entered test location when monitoring is not running. */
+    fun clearLocation() {
+        if (ready && role == "driver") liveRef().updateChildren(mapOf<String, Any?>(
+            "lat" to null, "lng" to null, "locationTimestampMs" to null,
+            "speedKph" to null, "locationSource" to null))
     }
 
     private var flushing = false
@@ -220,7 +228,7 @@ class DemoCloud(private val activity: Activity) {
         if (!ready || role != "supervisor" || email.isBlank()) return
         FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
             // Restrict registration in database rules to verified supervisor accounts.
-            db().getReference("supervisorTokens").child(firebaseEmailKey(email)).setValue(token)
+            db().getReference("supervisorTokens").child(uid()).setValue(token)
                 .addOnFailureListener { toast("Push registration failed: ${it.localizedMessage}") }
         }.addOnFailureListener { toast("FCM token unavailable: ${it.localizedMessage}") }
     }

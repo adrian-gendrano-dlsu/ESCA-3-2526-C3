@@ -129,12 +129,11 @@ class LauncherActivity : Activity() {
         showMessage("Checking access for ${user.email ?: "your account"}…")
         FirebaseDatabase.getInstance(
             "https://esca-3-2526-c3-testing-default-rtdb.asia-southeast1.firebasedatabase.app"
-        ).getReference("roles").child(firebaseEmailKey(user.email!!)).get()
+        ).getReference("roles").child(user.uid).get()
             .addOnSuccessListener { snapshot ->
                 checking = false
                 if (isFinishing || isDestroyed || FirebaseAuth.getInstance().currentUser?.uid != user.uid) return@addOnSuccessListener
-                val destination = when (if (snapshot.child("uid").getValue(String::class.java) == user.uid)
-                    snapshot.child("role").getValue(String::class.java) else null) {
+                val destination = when (snapshot.getValue(String::class.java)) {
                     "driver" -> MainActivity::class.java
                     "supervisor" -> SupervisorActivity::class.java
                     else -> null

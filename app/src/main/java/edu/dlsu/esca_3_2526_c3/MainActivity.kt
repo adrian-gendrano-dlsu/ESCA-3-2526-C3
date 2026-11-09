@@ -49,6 +49,8 @@ class MainActivity : Activity() {
     private var signingUp = false
     private var accountEmailDraft = ""
     private var developerMode = false
+    // No default test coordinates. A manual location lasts only for this activity/session.
+    private var manualCoordinates: Pair<Double, Double>? = null
     private var dashboardTaps = 0
     private var firstDashboardTap = 0L
     private var nightMode = false
@@ -229,6 +231,10 @@ class MainActivity : Activity() {
         }
         val intent = Intent(this, DriverMonitoringService::class.java)
             .setAction(if (running) DriverMonitoringService.STOP else DriverMonitoringService.START)
+        if (running && manualCoordinates != null) {
+            manualCoordinates = null
+            cloud.clearLocation()
+        }
         if (running) startService(intent) else ContextCompat.startForegroundService(this, intent)
     }
 
@@ -253,6 +259,10 @@ class MainActivity : Activity() {
             dashboardTaps = 0
             developerMode = !developerMode
             developerSessionEnabled = developerMode
+            if (!developerMode && manualCoordinates != null) {
+                manualCoordinates = null
+                if (DriverMonitoringService.active) refreshDeviceStatus() else cloud.clearLocation()
+            }
             cloud.toast(if (developerMode) "Developer mode on" else "Developer mode off")
             updateVisiblePage()
         }
@@ -293,18 +303,21 @@ class MainActivity : Activity() {
     /** Repaint only device indicators and camera snapshots without resetting the page. */
     private fun refreshDeviceStatus() {
         val state = devices.state
-        // Upload actual prototype GPS coordinates only while monitoring is active.
+        // An explicitly entered test location overrides prototype GPS until cleared.
+        val manual = manualCoordinates
         if (DriverMonitoringService.active && sessionStarted > 0L) {
             cloud.publish(statuses, sessionId,
                 (System.currentTimeMillis() - sessionStarted).coerceAtLeast(0L) / 1000L,
-                state.latitude, state.longitude, state.speedKph, updateLocation = true)
+                manual?.first ?: state.latitude, manual?.second ?: state.longitude,
+                if (manual == null) state.speedKph else null, updateLocation = true,
+                locationSource = if (manual != null) "manual" else if (state.gps) "gps" else null)
         }
         statusStrip?.apply {
             removeAllViews()
             val indicators = listOf(
                 "📷 Camera" to state.camera,
                 "▣ Sensor" to state.sensor,
-                "⌖ GPS" to state.gps,
+                (if (manual != null) "⌖ Manual location" else "⌖ GPS") to (manual != null || state.gps),
                 "☁ Firebase" to cloud.ready
             )
             indicators.chunked(2).forEach { pair ->
@@ -421,6 +434,67 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(Intent(this@MainActivity, SetupActivity::class.java)) }
         })
         page.addView(overview, Ui.blockParams(this))
+        if (developerMode) showManualLocationControls()
+    }
+
+    /** Optional driver-side test coordinates; blank until the researcher explicitly applies them. */
+    private fun showManualLocationControls() {
+        val card = Ui.card(this)
+        card.addView(Ui.title(this, "Manual GPS coordinates · Test"))
+        card.addView(Ui.note(this, "Optional test location for the Supervisor map. Leave blank to use prototype GPS."))
+        val numberType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                InputType.TYPE_NUMBER_FLAG_SIGNED
+        val latitude = EditText(this).apply {
+            hint = "Latitude (-90 to 90)"
+            inputType = numberType
+            setSingleLine(true)
+            textSize = 14f
+            setText(manualCoordinates?.first?.toString() ?: "")
+            if (nightMode) { setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        }
+        val longitude = EditText(this).apply {
+            hint = "Longitude (-180 to 180)"
+            inputType = numberType
+            setSingleLine(true)
+            textSize = 14f
+            setText(manualCoordinates?.second?.toString() ?: "")
+            if (nightMode) { setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        }
+        card.addView(latitude)
+        card.addView(longitude)
+        card.addView(Ui.note(this, if (manualCoordinates == null)
+            "Manual location not set" else "Manual override active · Not measured by GPS"))
+        val actions = LinearLayout(this)
+        actions.addView(Button(this).apply {
+            text = "Apply coordinates"
+            isAllCaps = false
+            setOnClickListener {
+                val lat = latitude.text.toString().trim().toDoubleOrNull()
+                val lng = longitude.text.toString().trim().toDoubleOrNull()
+                if (lat == null || lng == null || !lat.isFinite() || !lng.isFinite() ||
+                    lat !in -90.0..90.0 || lng !in -180.0..180.0 || (lat == 0.0 && lng == 0.0)) {
+                    cloud.toast("Enter a valid latitude and longitude (not 0, 0).")
+                    return@setOnClickListener
+                }
+                manualCoordinates = lat to lng
+                if (DriverMonitoringService.active) refreshDeviceStatus()
+                cloud.toast(if (DriverMonitoringService.active) "Manual test location applied"
+                else "Saved for this app session. Start monitoring to share it.")
+                showHome()
+            }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        actions.addView(Button(this).apply {
+            text = "Clear"
+            isAllCaps = false
+            setOnClickListener {
+                manualCoordinates = null
+                if (DriverMonitoringService.active) refreshDeviceStatus() else cloud.clearLocation()
+                cloud.toast("Manual test location cleared")
+                showHome()
+            }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        card.addView(actions)
+        page.addView(card, Ui.blockParams(this))
     }
 
     /** Display simulated detection controls and placeholder measurements. */
