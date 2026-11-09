@@ -16,10 +16,13 @@ import androidx.core.content.ContextCompat
 import android.view.Gravity
 import android.view.View
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -42,6 +45,7 @@ class MainActivity : Activity() {
     private var onHome = true
     private var onDetails = false
     private var onAccount = false
+    private var selectedHistorySession: String? = null
     private var signingUp = false
     private var accountEmailDraft = ""
     private var developerMode = false
@@ -148,7 +152,9 @@ class MainActivity : Activity() {
 
     /** Refresh the page currently selected by the driver. */
     private fun updateVisiblePage() {
-        if (onAccount) showAccount() else if (!onHome) showHistory() else if (onDetails) showDetails() else showHome()
+        if (onAccount) showAccount() else if (selectedHistorySession != null)
+            showSessionDetails(selectedHistorySession!!) else if (!onHome) showHistory()
+        else if (onDetails) showDetails() else showHome()
     }
 
     /** Resume receiving service updates when the app becomes visible. */
@@ -183,7 +189,7 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    /** Cycle a manually simulated alert for testing */
+    /** Cycle a manual alert for testing */
     private fun trigger(name: String) {
         if (!DriverMonitoringService.active) {
             cloud.toast("Start driver monitoring service first")
@@ -194,7 +200,7 @@ class MainActivity : Activity() {
         val next = when (current) {
             "Normal" -> "Warning"; "Warning" -> "High"; else -> "Normal"
         }
-        DriverMonitoringService.updateSimulatedRisk(name, next)
+        DriverMonitoringService.updateSimulatedRisk(this, name, next)
 
         if (next != "Normal") {
             val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
@@ -463,23 +469,56 @@ class MainActivity : Activity() {
         page.addView(alerts, Ui.blockParams(this))
     }
 
-    /** Show example sessions and manual Firebase synchronization controls. */
+    /** Show recorded monitoring runs.
+     * Sessions under 10 seconds are discarded. */
     private fun showHistory() {
         onHome = false
         onAccount = false
+        selectedHistorySession = null
         selectTab(false)
-        // These history rows are static examples currently
         val history = Ui.card(this)
         history.addView(Ui.title(this, "Session History"))
-        if (developerMode) {
-            history.addView(Ui.eyebrow(this, "SAMPLE SESSIONS"))
-            history.addView(Ui.session(this, "Apr 26", "48 minutes", "5 alerts"))
-            history.addView(Ui.session(this, "Apr 25", "1 hour 12 minutes", "2 alerts"))
-            history.addView(Ui.session(this, "Apr 24", "35 minutes", "0 alerts"))
-        } else history.addView(Ui.note(this, "No saved sessions yet."))
+        val sessions = SessionHistoryStore.list(this)
+
+        if (sessions.isEmpty()) history.addView(Ui.note(this, "No saved sessions yet. Start monitoring to record a session."))
+        else sessions.forEach { session ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, Ui.dp(this@MainActivity, 10), 0, Ui.dp(this@MainActivity, 10))
+                setOnClickListener { showSessionDetails(session.id) }
+                contentDescription = "${sessionDate(session.startedMs)}, ${sessionMinutes(session.durationMs())}, ${session.alerts.size} alerts. View details"
+            }
+            val summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            summary.addView(TextView(this).apply {
+                text = sessionDate(session.startedMs)
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (nightMode) Color.WHITE else Ui.navy)
+            })
+            summary.addView(Ui.note(this, sessionMinutes(session.durationMs()) +
+                    if (session.active && DriverMonitoringService.active && DriverMonitoringService.sessionId == session.id)
+                        " · In progress" else ""))
+            row.addView(summary, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(Ui.chip(this, "${session.alerts.size} alerts", when {
+                session.alerts.any { it.severity == "High" } -> Ui.red
+                session.alerts.isEmpty() -> Ui.muted
+                else -> Ui.amber
+            }))
+            row.addView(ImageButton(this).apply {
+                setImageResource(android.R.drawable.ic_menu_share)
+                imageTintList = ColorStateList.valueOf(if (nightMode) Color.WHITE else Ui.muted)
+                setBackgroundColor(Color.TRANSPARENT)
+                contentDescription = "Share session log"
+                setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 12),
+                    Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 12))
+                setOnClickListener { shareSession(session) }
+            })
+            history.addView(row)
+        }
         page.addView(history, Ui.blockParams(this))
 
-        // Manual cloud synchronization is a developer-only test control.
+        // Manual cloud synchronization - only accessible in developer mode
         if (developerMode) {
             // Retry pending Firebase events when the driver role is authorized
             val sync = Ui.card(this)
@@ -500,6 +539,76 @@ class MainActivity : Activity() {
             sync.addView(Ui.note(this, cloud.connectionLabel))
             page.addView(sync, Ui.blockParams(this))
         }
+    }
+
+    private fun sessionDate(ms: Long): String =
+        SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(ms))
+
+    private fun sessionMinutes(ms: Long): String =
+        String.format(Locale.getDefault(), "%.1f min", ms / 60_000.0)
+
+    /** A session-specific screen with its chronological risk and alert records. */
+    private fun showSessionDetails(id: String) {
+        val session = SessionHistoryStore.get(this, id) ?: run { showHistory(); return }
+        onHome = false
+        onAccount = false
+        selectedHistorySession = id
+        selectTab(false)
+
+        val details = Ui.card(this)
+        details.addView(Ui.note(this, "‹ Back to history").apply {
+            setOnClickListener { showHistory() }
+            setPadding(0, Ui.dp(this@MainActivity, 8), 0, Ui.dp(this@MainActivity, 18))
+        })
+        details.addView(Ui.title(this, sessionDate(session.startedMs)))
+        details.addView(Ui.pair(this, "Driving time", sessionMinutes(session.durationMs())))
+        details.addView(Ui.pair(this, "Alerts", session.alerts.size.toString()))
+        page.addView(details, Ui.blockParams(this))
+
+        val timeline = Ui.card(this)
+        timeline.addView(Ui.title(this, "Risk timeline"))
+        session.timeline.forEach { point ->
+            timeline.addView(Ui.alert(this, sessionDate(point.timestampMs),
+                "${(point.timestampMs - session.startedMs).coerceAtLeast(0L) / 1000} s into session",
+                point.level, Ui.riskColor(point.level)))
+        }
+        page.addView(timeline, Ui.blockParams(this))
+
+        val alerts = Ui.card(this)
+        alerts.addView(Ui.title(this, "Alerts"))
+        if (session.alerts.isEmpty()) alerts.addView(Ui.note(this, "No alerts were recorded."))
+        else session.alerts.forEach { alert ->
+            alerts.addView(Ui.alert(this, Ui.alertCause(alert.behavior),
+                SimpleDateFormat("h:mm:ss a", Locale.getDefault()).format(Date(alert.timestampMs)),
+                Ui.riskLevel(alert.severity), Ui.riskColor(alert.severity)))
+        }
+        page.addView(alerts, Ui.blockParams(this))
+    }
+
+    /** Share a readable text report without needing external storage permission. */
+    private fun shareSession(session: SessionHistoryStore.Session) {
+        val log = buildString {
+            appendLine("Session: ${sessionDate(session.startedMs)}")
+            appendLine("Driving time: ${sessionMinutes(session.durationMs())}")
+            appendLine("Alerts: ${session.alerts.size}")
+            appendLine("Simulated monitoring data")
+            appendLine("Risk timeline:")
+            session.timeline.forEach { appendLine("${sessionDate(it.timestampMs)} · ${it.level}") }
+            appendLine("Alerts:")
+            session.alerts.forEach {
+                appendLine("${sessionDate(it.timestampMs)} · ${it.behavior} · ${Ui.riskLevel(it.severity)}")
+            }
+        }
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, log)
+        }, "Share session log"))
+    }
+
+    /** System Back returns from the session detail screen to History. */
+    @Deprecated("Use Back navigation")
+    override fun onBackPressed() {
+        if (selectedHistorySession != null) showHistory() else super.onBackPressed()
     }
 
     /** Dedicated screen for Firebase email/password sign-in and registration. */

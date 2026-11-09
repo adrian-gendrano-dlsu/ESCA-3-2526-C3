@@ -57,13 +57,18 @@ class DriverMonitoringService : Service(), TextToSpeech.OnInitListener {
         private var restored = false
         private val resetHandler = Handler(Looper.getMainLooper())
 
-        /** Update one demo behavior and schedule its automatic return to Normal. */
-        fun updateSimulatedRisk(name: String, level: String) {
+        /** Update one behavior and schedule its automatic return to Normal. */
+        fun updateSimulatedRisk(context: Context, name: String, level: String) {
             statuses[name] = level
+
+            if (active) SessionHistoryStore.record(context, sessionId, name, level, statuses)
+
             onChange?.invoke()
+
             if (level != "Normal") resetHandler.postDelayed({
                 if (active && statuses[name] == level) {
                     statuses[name] = "Normal"
+                    SessionHistoryStore.record(context.applicationContext, sessionId, name, "Normal", statuses)
                     onChange?.invoke()
                 }
             }, 12_000L)
@@ -99,11 +104,15 @@ class DriverMonitoringService : Service(), TextToSpeech.OnInitListener {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putBoolean("active", true).putLong("started", sessionStarted)
                 .putString("session", sessionId).putLong("lastBreak", 0L).apply()
+
+            SessionHistoryStore.start(context, sessionId, sessionStarted)
             onChange?.invoke()
         }
 
         /** Stop the session, clear pending risk resets, and persist inactivity. */
         private fun finish(context: Context) {
+            SessionHistoryStore.stop(context, sessionId)
+
             active = false
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putBoolean("active", false).apply()
@@ -137,6 +146,8 @@ class DriverMonitoringService : Service(), TextToSpeech.OnInitListener {
             }
 
             getSystemService(NotificationManager::class.java).notify(ACTIVE_ID, activeNotification())
+
+            SessionHistoryStore.checkpoint(this@DriverMonitoringService, sessionId)
             publishDemo()
             handler.postDelayed(this, 30_000L)
         }
