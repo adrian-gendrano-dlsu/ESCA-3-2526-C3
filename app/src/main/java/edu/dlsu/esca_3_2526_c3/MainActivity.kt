@@ -2,23 +2,28 @@ package edu.dlsu.esca_3_2526_c3
 
 import android.app.Activity
 import android.content.Intent
+import android.text.InputType
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.Manifest
 import android.animation.ValueAnimator
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import androidx.core.content.ContextCompat
 import android.view.Gravity
+import android.view.View
 import java.text.DateFormat
 import java.util.Date
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : Activity() {
     // Firebase test connection and shared monitoring-service state.
@@ -31,6 +36,12 @@ class MainActivity : Activity() {
     // Track the current page and the saved display preference.
     private var onHome = true
     private var onDetails = false
+    private var onAccount = false
+    private var signingUp = false
+    private var accountEmailDraft = ""
+    private var developerMode = false
+    private var dashboardTaps = 0
+    private var firstDashboardTap = 0L
     private var nightMode = false
 
     // The HIGH-risk animation must be cancelled before rebuilding the page.
@@ -43,6 +54,8 @@ class MainActivity : Activity() {
     private lateinit var scroller: ScrollView
     private lateinit var homeTab: TextView
     private lateinit var historyTab: TextView
+    private lateinit var accountTab: TextView
+    private lateinit var settingsTab: TextView
     private var statusStrip: LinearLayout? = null
     private var cameraFrame: LinearLayout? = null
 
@@ -63,7 +76,9 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.canvas)
         }
-        root.addView(Ui.header(this, "Driver Dashboard"))
+        root.addView(Ui.header(this, "Driver Dashboard").apply {
+            setOnClickListener { onDashboardTap() }
+        })
         scroller = ScrollView(this).apply {
             isFillViewport = true
             addView(LinearLayout(this@MainActivity).apply {
@@ -89,13 +104,16 @@ class MainActivity : Activity() {
                 Ui.dp(this@MainActivity, 8)
             )
         }
-        homeTab = Ui.tab(this, "⌂  Home") { showHome() }
-        historyTab = Ui.tab(this, "◷  History") { showHistory() }
+
+        homeTab = Ui.tab(this, "⌂  Home") { showHome() }.apply { textSize = 13f }
+        historyTab = Ui.tab(this, "◷  History") { showHistory() }.apply { textSize = 13f }
+        accountTab = Ui.tab(this, "Account") { showAccount() }.apply { textSize = 13f }
+        settingsTab = Ui.tab(this, "⚙  Settings") { startActivity(Intent(this, SettingsActivity::class.java)) }.apply { textSize = 13f }
+
         tabs.addView(homeTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         tabs.addView(historyTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
-        tabs.addView(Ui.tab(this, "⚙  Settings") {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
+        tabs.addView(accountTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
+        tabs.addView(settingsTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         root.addView(tabs)
         setContentView(root)
 
@@ -113,14 +131,22 @@ class MainActivity : Activity() {
 
     /** Refresh the page currently selected by the driver. */
     private fun updateVisiblePage() {
-        if (!onHome) showHistory() else if (onDetails) showDetails() else showHome()
+        if (onAccount) showAccount() else if (!onHome) showHistory() else if (onDetails) showDetails() else showHome()
     }
 
     /** Resume receiving service updates when the app becomes visible. */
     override fun onResume() {
         super.onResume()
         Ui.nightMode = nightMode
-        DriverMonitoringService.onChange = { if (!isFinishing && !isDestroyed) updateVisiblePage() }
+        DriverMonitoringService.onChange = { if (!isFinishing && !isDestroyed && !onAccount) updateVisiblePage() }
+
+        // Account sign-in may have changed while another screen was open.
+        cloud.stop()
+        cloud = DemoCloud(this).apply {
+            onChange = { if (!isFinishing) updateVisiblePage() }
+            start()
+        }
+
         devices.start()
         if (::page.isInitialized) updateVisiblePage()
     }
@@ -193,32 +219,28 @@ class MainActivity : Activity() {
         updateVisiblePage()
     }
 
-    /** controls for Firebase syncing. */
-    private fun accountArea(target: LinearLayout) {
-        target.addView(Ui.note(this, cloud.connectionLabel))
-        val button = Button(this).apply {
-            text =
-                if (cloud.signedIn) "Sign out  ·  ${cloud.email}" else "Sign in (Driver researcher account)"
-            isAllCaps = false
-            setOnClickListener {
-                if (cloud.signedIn) cloud.signOut() else cloud.signInDialog("driver")
-            }
+    /** Seven header taps - toggle UI-only test controls. */
+    private fun onDashboardTap() {
+        val now = System.currentTimeMillis()
+        if (dashboardTaps == 0 || now - firstDashboardTap > 4500L) {
+            dashboardTaps = 0
+            firstDashboardTap = now
         }
-        target.addView(button)
-        if (cloud.signedIn && cloud.role != "driver") {
-            target.addView(
-                Ui.note(
-                    this,
-                    "Driver Firebase writes require a researcher account assigned the driver role."
-                )
-            )
+        if (++dashboardTaps == 7) {
+            dashboardTaps = 0
+            developerMode = !developerMode
+            cloud.toast(if (developerMode) "Developer mode on" else "Developer mode off")
+            updateVisiblePage()
         }
     }
 
     /** Reset page, flashing border */
-    private fun selectTab(home: Boolean) {
+    private fun selectTab(home: Boolean, account: Boolean = false) {
         Ui.activeTab(homeTab, home)
-        Ui.activeTab(historyTab, !home)
+        Ui.activeTab(historyTab, !home && !account)
+        Ui.activeTab(accountTab, account)
+        Ui.activeTab(settingsTab, false)
+        settingsTab.visibility = if (developerMode) View.VISIBLE else View.GONE
         borderPulse?.cancel()
         borderPulse = null
         root.foreground = null
@@ -294,6 +316,7 @@ class MainActivity : Activity() {
     private fun showHome() {
         onHome = true
         onDetails = false
+        onAccount = false
         selectTab(true)
         val overview = Ui.card(this)
         overview.addView(Ui.eyebrow(this, "DRIVING MODE"))
@@ -314,12 +337,12 @@ class MainActivity : Activity() {
         }
 
         val riskDisplay = TextView(this).apply {
-            text = if (risk == "STOPPED") "DRIVER MONITORING SERVICE IS STOPPED" else "$risk RISK"
+            text = if (risk == "STOPPED") "MONITORING OFF" else "$risk RISK"
             textSize = 32f
             gravity = Gravity.CENTER
             setTextColor(if (risk == "MEDIUM") Color.BLACK else Color.WHITE)
-            setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 45),
-                Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 45))
+            setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 27),
+                Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 27))
             background = riskBackground
         }
         overview.addView(riskDisplay, LinearLayout.LayoutParams(-1, -2))
@@ -331,30 +354,38 @@ class MainActivity : Activity() {
             "LOW" -> "Keep your eyes on the road"
             else -> "Driver monitoring service is stopped"
         }))
-        addConnectionStrip(overview)
 
+        // Keep Start and Stop immediately below the risk message.
         overview.addView(Button(this).apply {
-            text = if (DriverMonitoringService.active) "Stop driver monitoring service" else "Start driver monitoring service"
+            text = if (DriverMonitoringService.active) "Stop monitoring" else "Start monitoring"
             isAllCaps = false
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            minimumHeight = Ui.dp(this@MainActivity, 68)
             setTextColor(Color.WHITE)
             backgroundTintList = ColorStateList.valueOf(if (DriverMonitoringService.active) Ui.red else Ui.green)
             setOnClickListener { controlSession() }
         })
-        overview.addView(Ui.space(this, 12))
+        overview.addView(Ui.space(this, 8))
+        addConnectionStrip(overview)
+        overview.addView(Ui.note(this, if (cloud.signedIn)
+            "Signed in as ${cloud.email}" else "Not signed in · Open Account to sign in"))
 
-        overview.addView(Button(this).apply {
-            text = if (nightMode) "Night mode ON · Turn off" else "Night mode OFF · Turn on"
+        // Side-by-side shortcuts avoid another row of full-width buttons.
+        val shortcuts = LinearLayout(this)
+        shortcuts.addView(Button(this).apply {
+            text = if (nightMode) "Day mode" else "Night mode"
             isAllCaps = false
             if (nightMode) { backgroundTintList = ColorStateList.valueOf(Ui.navy); setTextColor(Color.WHITE) }
             setOnClickListener { switchNightMode() }
-        })
-
-        overview.addView(Button(this).apply {
+        }, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
+        shortcuts.addView(Button(this).apply {
             text = "View details"
             isAllCaps = false
             if (nightMode) { backgroundTintList = ColorStateList.valueOf(Ui.navy); setTextColor(Color.WHITE) }
             setOnClickListener { showDetails() }
-        })
+        }, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
+        overview.addView(shortcuts)
         page.addView(overview, Ui.blockParams(this))
     }
 
@@ -362,6 +393,7 @@ class MainActivity : Activity() {
     private fun showDetails() {
         onHome = true
         onDetails = true
+        onAccount = false
         selectTab(true)
         val metrics = Ui.card(this)
         metrics.addView(Ui.title(this, "Detection Details"))
@@ -373,21 +405,22 @@ class MainActivity : Activity() {
         metrics.addView(Ui.pair(this, "Trip duration", if (DriverMonitoringService.active)
             "${(System.currentTimeMillis() - sessionStarted).coerceAtLeast(0L) / 60000} min" else "Not monitoring"))
 
-        // Make rows tappable to simulate detection status.
-        for (name in listOf("Drowsiness", "Yawning", "Gaze deviation", "Phone usage")) {
-            val row = Ui.pair(this, name, Ui.riskLevel(statuses[name] ?: "Normal"))
-            row.setOnClickListener { trigger(name) }
-            metrics.addView(row)
+        // show measurements only when developer mode is on
+        if (developerMode) {
+            for (name in listOf("Drowsiness", "Yawning", "Gaze deviation", "Phone usage")) {
+                val row = Ui.pair(this, name, Ui.riskLevel(statuses[name] ?: "Normal"))
+                row.setOnClickListener { trigger(name) }
+                metrics.addView(row)
+            }
+            metrics.addView(Ui.space(this, 10))
+            metrics.addView(Ui.eyebrow(this, "RAW MEASUREMENTS"))
+            metrics.addView(Ui.pair(this, "Eye openness (EAR)", "0.286"))
+            metrics.addView(Ui.pair(this, "Mouth opening (MAR)", "0.124"))
+            metrics.addView(Ui.pair(this, "Head turn (yaw)", "4.5°"))
+            metrics.addView(Ui.pair(this, "Head tilt (pitch)", "-2.0°"))
+            metrics.addView(Ui.pair(this, "Camera frames per second", "Camera not connected"))
         }
-        metrics.addView(Ui.space(this, 10))
 
-        // Replace these sample measurements eventually.
-        metrics.addView(Ui.eyebrow(this, "MEASUREMENTS"))
-        metrics.addView(Ui.pair(this, "Eye openness (EAR)", "0.286"))
-        metrics.addView(Ui.pair(this, "Mouth opening (MAR)", "0.124"))
-        metrics.addView(Ui.pair(this, "Head turn (yaw)", "4.5°"))
-        metrics.addView(Ui.pair(this, "Head tilt (pitch)", "-2.0°"))
-        metrics.addView(Ui.pair(this, "Camera frames per second", "Camera not connected"))
         metrics.addView(Button(this).apply {
             text = "Back to Driving mode"
             isAllCaps = false
@@ -399,8 +432,9 @@ class MainActivity : Activity() {
         // Recent alerts list that contains manually simulated test events
         val alerts = Ui.card(this)
         alerts.addView(Ui.title(this, "Recent Alerts"))
-        if (recent.isEmpty()) alerts.addView(Ui.note(this, "No events yet"))
-        recent.take(5).forEach { (behavior, time, severity) ->
+        if (!developerMode) alerts.addView(Ui.note(this, "No live alerts available yet."))
+        else if (recent.isEmpty()) alerts.addView(Ui.note(this, "No test events yet"))
+        else recent.take(5).forEach { (behavior, time, severity) ->
             alerts.addView(Ui.alert(this, Ui.alertCause(behavior), time, Ui.riskLevel(severity),
                 Ui.riskColor(severity)))
         }
@@ -410,33 +444,158 @@ class MainActivity : Activity() {
     /** Show example sessions and manual Firebase synchronization controls. */
     private fun showHistory() {
         onHome = false
+        onAccount = false
         selectTab(false)
         // These history rows are static examples currently
         val history = Ui.card(this)
         history.addView(Ui.title(this, "Session History"))
-        history.addView(Ui.session(this, "Apr 26", "48 minutes", "5 alerts"))
-        history.addView(Ui.session(this, "Apr 25", "1 hour 12 minutes", "2 alerts"))
-        history.addView(Ui.session(this, "Apr 24", "35 minutes", "0 alerts"))
+        if (developerMode) {
+            history.addView(Ui.eyebrow(this, "SAMPLE SESSIONS"))
+            history.addView(Ui.session(this, "Apr 26", "48 minutes", "5 alerts"))
+            history.addView(Ui.session(this, "Apr 25", "1 hour 12 minutes", "2 alerts"))
+            history.addView(Ui.session(this, "Apr 24", "35 minutes", "0 alerts"))
+        } else history.addView(Ui.note(this, "No saved sessions yet."))
         page.addView(history, Ui.blockParams(this))
 
-        // Retry pending Firebase events when the driver role is authorized
-        val sync = Ui.card(this)
-        sync.addView(Ui.title(this, "Supervisor Sync"))
-        val button = Button(this).apply {
-            text = "Manually Sync Logs to Supervisor"
-            isAllCaps = false
-            setOnClickListener {
-                if (cloud.role != "driver") cloud.toast("Sign in as a driver researcher to sync.")
-                else {
-                    cloud.flush(); cloud.toast("Sync requested. Check pending count and Firebase connection.")
+        // Manual cloud synchronization is a developer-only test control.
+        if (developerMode) {
+            // Retry pending Firebase events when the driver role is authorized
+            val sync = Ui.card(this)
+            sync.addView(Ui.title(this, "Supervisor Sync · Test"))
+            val button = Button(this).apply {
+                text = "Manually Sync Logs to Supervisor"
+                isAllCaps = false
+                setOnClickListener {
+                    if (cloud.role != "driver") cloud.toast("Sign in as a driver researcher to sync.")
+                    else {
+                        cloud.flush(); cloud.toast("Sync requested. Check pending count and Firebase connection.")
+                    }
                 }
             }
+            sync.addView(button)
+            sync.addView(Ui.note(this, "Last successful event sync: ${cloud.lastSyncText()}"))
+            sync.addView(Ui.note(this, "Pending simulated events: ${cloud.pendingCount}"))
+            sync.addView(Ui.note(this, cloud.connectionLabel))
+            page.addView(sync, Ui.blockParams(this))
         }
-        sync.addView(button)
-        sync.addView(Ui.note(this, "Last successful event sync: ${cloud.lastSyncText()}"))
-        sync.addView(Ui.note(this, "Pending simulated events: ${cloud.pendingCount}"))
-        sync.addView(Ui.note(this, cloud.connectionLabel))
-        accountArea(sync)
-        page.addView(sync, Ui.blockParams(this))
+    }
+
+    /** A dedicated screen for Firebase email/password sign-in and registration. */
+    private fun showAccount() {
+        onHome = false
+        onAccount = true
+        selectTab(false, true)
+
+        val account = Ui.card(this)
+        account.addView(Ui.title(this, "Account"))
+
+        if (cloud.signedIn) {
+            account.addView(Ui.note(this, "Signed in as ${cloud.email}"))
+            account.addView(Ui.pair(this, "Account role", cloud.role.ifBlank { "Awaiting approval" }))
+            account.addView(Ui.note(this, cloud.connectionLabel))
+            account.addView(Ui.note(this, "Cloud monitoring requires an account approved for the driver role."))
+            account.addView(Button(this).apply {
+                text = "Sign out"
+                isAllCaps = false
+                setOnClickListener { cloud.signOut() }
+            })
+        } else {
+            account.addView(Ui.note(this, "Sign in or create a Firebase account."))
+            val choices = LinearLayout(this)
+            choices.addView(Button(this).apply {
+                text = "Sign in"
+                isEnabled = signingUp
+                isAllCaps = false
+                setOnClickListener { accountEmailDraft = ""; signingUp = false; showAccount() }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            choices.addView(Button(this).apply {
+                text = "Sign up"
+                isEnabled = !signingUp
+                isAllCaps = false
+                setOnClickListener { accountEmailDraft = ""; signingUp = true; showAccount() }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            account.addView(choices)
+
+            val email = EditText(this).apply {
+                hint = "Email address"
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                setSingleLine(true)
+                setText(accountEmailDraft)
+            }
+            val password = EditText(this).apply {
+                hint = "Password (at least 6 characters)"
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                setSingleLine(true)
+            }
+            account.addView(email)
+            account.addView(password)
+            val confirmation = if (signingUp) EditText(this).apply {
+                hint = "Confirm password"
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                setSingleLine(true)
+            } else null
+            confirmation?.let { account.addView(it) }
+
+            val feedback = TextView(this).apply { setTextColor(Ui.red); textSize = 14f }
+            account.addView(feedback)
+            val submit = Button(this).apply {
+                text = if (signingUp) "Create account" else "Sign in"
+                isAllCaps = false
+                setOnClickListener {
+                    val address = email.text.toString().trim()
+                    val secret = password.text.toString()
+                    accountEmailDraft = address
+                    when {
+                        !cloud.configured -> { feedback.text = "Firebase is not configured on this device"; return@setOnClickListener }
+                        !android.util.Patterns.EMAIL_ADDRESS.matcher(address).matches() -> {
+                            feedback.text = "Enter a valid email address"; return@setOnClickListener
+                        }
+                        secret.isBlank() -> { feedback.text = "Enter your password"; return@setOnClickListener }
+                        signingUp && secret.length < 6 -> {
+                            feedback.text = "Use at least 6 password characters"; return@setOnClickListener
+                        }
+                        signingUp && secret != confirmation?.text.toString() -> {
+                            feedback.text = "Passwords do not match"; return@setOnClickListener
+                        }
+                    }
+                    isEnabled = false
+                    feedback.text = if (signingUp) "Creating account…" else "Signing in…"
+                    val auth = FirebaseAuth.getInstance()
+                    val task = if (signingUp) auth.createUserWithEmailAndPassword(address, secret)
+                    else auth.signInWithEmailAndPassword(address, secret)
+                    task.addOnCompleteListener(this@MainActivity) { result ->
+                        if (result.isSuccessful) {
+                            cloud.stop()
+                            cloud = DemoCloud(this@MainActivity).apply {
+                                onChange = { if (!isFinishing) updateVisiblePage() }
+                                start()
+                            }
+                            showAccount()
+                        } else {
+                            isEnabled = true
+                            feedback.text = result.exception?.localizedMessage ?: "Authentication failed"
+                        }
+                    }
+                }
+            }
+            account.addView(submit)
+            if (!signingUp) account.addView(Button(this).apply {
+                text = "Forgot password?"
+                isAllCaps = false
+                setOnClickListener {
+                    val address = email.text.toString().trim()
+                    if (!cloud.configured || !android.util.Patterns.EMAIL_ADDRESS.matcher(address).matches()) {
+                        feedback.text = "Enter a valid email address first"
+                    } else {
+                        FirebaseAuth.getInstance().sendPasswordResetEmail(address)
+                            .addOnSuccessListener { feedback.text = "If the account exists, check your email" }
+                            .addOnFailureListener { feedback.text = it.localizedMessage ?: "Could not send reset email" }
+                    }
+                }
+            })
+            if (signingUp) account.addView(Ui.note(this,
+                "New accounts need researcher approval before they can synchronize driver data."))
+        }
+        page.addView(account, Ui.blockParams(this))
     }
 }
