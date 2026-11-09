@@ -27,8 +27,7 @@ import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : Activity() {
     companion object {
-        // Settings is available only during an unlocked developer session.
-        internal var developerSessionEnabled = false
+        var developerSessionEnabled = false
             private set
     }
 
@@ -71,8 +70,8 @@ class MainActivity : Activity() {
     /** Set up UI and reconnect to an existing monitoring session. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DriverMonitoringService.restore(this)
         developerSessionEnabled = false
+        DriverMonitoringService.restore(this)
         nightMode = getSharedPreferences("driver_display", MODE_PRIVATE).getBoolean("night", false)
         Ui.nightMode = nightMode
         window.statusBarColor = Ui.navy
@@ -115,7 +114,7 @@ class MainActivity : Activity() {
         homeTab = Ui.tab(this, "⌂  Home") { showHome() }.apply { textSize = 13f }
         historyTab = Ui.tab(this, "◷  History") { showHistory() }.apply { textSize = 13f }
         accountTab = Ui.tab(this, "Account") { showAccount() }.apply { textSize = 13f }
-        settingsTab = Ui.tab(this, "⚙  Settings") { if (developerMode) startActivity(Intent(this, SettingsActivity::class.java)) }.apply { textSize = 13f }
+        settingsTab = Ui.tab(this, "⚙  Settings") { startActivity(Intent(this, SettingsActivity::class.java)) }.apply { textSize = 13f }
 
         tabs.addView(homeTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         tabs.addView(historyTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
@@ -126,30 +125,25 @@ class MainActivity : Activity() {
 
         // Refresh the current page when Firebase connection data changes.
         cloud = DemoCloud(this)
-        cloud.onChange = { if (!isFinishing) updateVisiblePage() }
+        cloud.onChange = { if (!isFinishing) refreshForRole() }
         cloud.start()
 
         if (DriverMonitoringService.active) {
             ContextCompat.startForegroundService(this, Intent(this, DriverMonitoringService::class.java).setAction(DriverMonitoringService.START))
         }
 
-        openRequestedTab(intent)
-    }
-
-    /** Return to the selected driver tab from Developer Settings. */
-    private fun openRequestedTab(source: Intent?) {
-        when (source?.getStringExtra("driver_tab")) {
-            "history" -> showHistory()
-            "account" -> showAccount()
-            else -> showHome()
+        showHome()
+        if (!getSharedPreferences("driver_setup_v1", MODE_PRIVATE).getBoolean("complete", false)) {
+            startActivity(Intent(this, SetupActivity::class.java))
         }
-        source?.removeExtra("driver_tab")
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        if (::page.isInitialized) openRequestedTab(intent)
+    /** Existing sessions may change Firebase roles while this activity is visible. */
+    private fun refreshForRole() {
+        if (cloud.role == "supervisor") {
+            startActivity(Intent(this, SupervisorActivity::class.java))
+            finish()
+        } else updateVisiblePage()
     }
 
     /** Refresh the page currently selected by the driver. */
@@ -166,7 +160,7 @@ class MainActivity : Activity() {
         // Account sign-in may have changed while another screen was open.
         cloud.stop()
         cloud = DemoCloud(this).apply {
-            onChange = { if (!isFinishing) updateVisiblePage() }
+            onChange = { if (!isFinishing) refreshForRole() }
             start()
         }
 
@@ -410,6 +404,10 @@ class MainActivity : Activity() {
             setOnClickListener { showDetails() }
         }, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         overview.addView(shortcuts)
+        overview.addView(Ui.note(this, "Setup guide & camera alignment  ›").apply {
+            setPadding(0, Ui.dp(this@MainActivity, 12), 0, Ui.dp(this@MainActivity, 8))
+            setOnClickListener { startActivity(Intent(this@MainActivity, SetupActivity::class.java)) }
+        })
         page.addView(overview, Ui.blockParams(this))
     }
 
@@ -521,7 +519,11 @@ class MainActivity : Activity() {
             account.addView(Button(this).apply {
                 text = "Sign out"
                 isAllCaps = false
-                setOnClickListener { cloud.signOut() }
+                setOnClickListener {
+                    cloud.signOut()
+                    startActivity(Intent(this@MainActivity, LauncherActivity::class.java))
+                    finish()
+                }
             })
         } else {
             account.addView(Ui.note(this, "Sign in or create a Firebase account."))
@@ -600,7 +602,7 @@ class MainActivity : Activity() {
                         if (result.isSuccessful) {
                             cloud.stop()
                             cloud = DemoCloud(this@MainActivity).apply {
-                                onChange = { if (!isFinishing) updateVisiblePage() }
+                                onChange = { if (!isFinishing) refreshForRole() }
                                 start()
                             }
                             showAccount()

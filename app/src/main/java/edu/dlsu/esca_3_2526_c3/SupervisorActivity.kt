@@ -1,6 +1,7 @@
 package edu.dlsu.esca_3_2526_c3
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
@@ -42,6 +43,7 @@ class SupervisorActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getStringExtra("driver_id") == "driver1") selected = 0
         window.statusBarColor = Ui.navy
         window.navigationBarColor = Ui.navy
         val scroll = ScrollView(this).apply { setBackgroundColor(Ui.background) }
@@ -52,7 +54,12 @@ class SupervisorActivity : Activity() {
         scroll.addView(content)
         setContentView(scroll)
         cloud = DemoCloud(this)
-        cloud.onChange = {
+        cloud.onChange = roleChanged@{
+            if (cloud.role == "driver") {
+                startActivity(Intent(this, MainActivity::class.java))
+                finish()
+                return@roleChanged
+            }
             if (cloud.role == "supervisor" && cloud.signedIn) {
                 attachLive()
                 if (cloud.ready) cloud.registerSupervisorPush()
@@ -61,6 +68,16 @@ class SupervisorActivity : Activity() {
         }
         cloud.start()
         showSupervisor()
+    }
+
+    /** A second notification can focus Driver 1 without recreating the screen. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getStringExtra("driver_id") == "driver1") {
+            selected = 0
+            showSupervisor()
+        }
     }
 
     override fun onDestroy() { detachLive(); cloud.stop(); super.onDestroy() }
@@ -131,9 +148,16 @@ class SupervisorActivity : Activity() {
         account.addView(Ui.note(this, cloud.connectionLabel))
         account.addView(Ui.note(this, "Cloud data restricted to accounts with the supervisor role."))
         account.addView(Button(this).apply {
-            text = if (cloud.signedIn) "Sign out · ${cloud.email}" else "Sign in (Supervisor researcher account)"
+            text = if (cloud.signedIn) "Sign out · ${cloud.email}" else "Account / Sign in"
             isAllCaps = false
-            setOnClickListener { if (cloud.signedIn) { detachLive(); cloud.signOut() } else cloud.signInDialog("supervisor") }
+            setOnClickListener {
+                if (cloud.signedIn) {
+                    detachLive()
+                    cloud.signOut()
+                }
+                startActivity(Intent(this@SupervisorActivity, LauncherActivity::class.java))
+                finish()
+            }
         })
         content.addView(account, Ui.blockParams(this))
         if (cloud.role != "supervisor") {

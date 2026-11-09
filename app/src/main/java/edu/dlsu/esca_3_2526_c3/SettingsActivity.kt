@@ -108,14 +108,14 @@ class SettingsActivity : Activity() {
         endpoints.addView(snapshot, LinearLayout.LayoutParams(-1, -2))
         body.addView(endpoints, Ui.blockParams(this))
 
-        // ALERTS: describe the currently fixed behavior without adding fake controls.
+        // ALERTS
         val alerts = Ui.card(this)
-        alerts.addView(Ui.title(this, "Alerts"))
+        alerts.addView(Ui.title(this, "Alerts - empty for now"))
         body.addView(alerts, Ui.blockParams(this))
 
-        // MODELS: informational only until model integration is available.
+        // MODELS
         val models = Ui.card(this)
-        models.addView(Ui.title(this, "Models"))
+        models.addView(Ui.title(this, "Models - empty for now"))
         body.addView(models, Ui.blockParams(this))
 
         // ADVANCED: Wi-Fi provisioning and a future polling preference.
@@ -140,8 +140,8 @@ class SettingsActivity : Activity() {
         // Do not save the new Wi-Fi password in SharedPreferences
         testAction(advanced, "Send Wi-Fi credentials") { provisionCamera(it) }
 
-        advanced.addView(Ui.note(this, "Future sensor polling interval (ms)"))
-        pollMs = field("Future sensor polling interval (ms)", prefs.getInt("poll_ms", 1000).toString()).apply {
+        advanced.addView(Ui.note(this, "Sensor polling interval (ms)"))
+        pollMs = field("sensor polling interval (ms)", prefs.getInt("poll_ms", 1000).toString()).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
         }
         advanced.addView(pollMs)

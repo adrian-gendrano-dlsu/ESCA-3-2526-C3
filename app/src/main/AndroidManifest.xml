@@ -26,25 +26,17 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.ESCA_3_2526_C3">
 
-        <!-- Driver launcher entry. The two roles currently have separate app icons. -->
-        <activity android:name=".MainActivity" android:exported="true"
-            android:label="ESCA-3-2526-C3 Driver"
-            android:icon="@android:drawable/ic_menu_directions">
+        <!-- The only launcher icon. Firebase role determines the destination. -->
+        <activity android:name=".LauncherActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
 
-        <!-- Supervisor launcher entry, separate from the driver interface. -->
-        <activity android:name=".SupervisorActivity" android:exported="true"
-            android:label="ESCA-3-2526-C3 Supervisor"
-            android:icon="@android:drawable/ic_menu_myplaces">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity>
+        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name=".SupervisorActivity" android:exported="false" />
+        <activity android:name=".SetupActivity" android:exported="false" />
 
         <!-- Internal settings screen, opened from within the app. -->
         <activity android:name=".SettingsActivity" android:exported="false"/>

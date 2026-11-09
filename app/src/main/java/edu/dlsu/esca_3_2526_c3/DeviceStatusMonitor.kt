@@ -3,6 +3,9 @@ package edu.dlsu.esca_3_2526_c3
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.PointF
+import android.media.FaceDetector
+import kotlin.math.roundToInt
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Handler
@@ -17,7 +20,8 @@ class DeviceStatusMonitor(private val context: Context, private val onChange: ()
         val camera: Boolean = false,
         val sensor: Boolean = false,
         val gps: Boolean = false,
-        val photo: Bitmap? = null
+        val photo: Bitmap? = null,
+        val faceOffsetPercent: Int? = null // Percentage of half-frame width, not a yaw angle.
     )
 
     var state = State()
@@ -83,6 +87,25 @@ class DeviceStatusMonitor(private val context: Context, private val onChange: ()
         } finally { c.disconnect() }
     }
 
+    /** Estimate the horizontal position of the visible face from one JPEG snapshot. */
+    private fun faceOffset(frame: Bitmap): Int? {
+        if (frame.width < 2 || frame.height < 2) return null
+        val width = (minOf(frame.width, 640) / 2) * 2 // FaceDetector requires even width.
+        val height = (frame.height.toDouble() * width / frame.width).roundToInt().coerceAtLeast(2)
+        val resized = Bitmap.createScaledBitmap(frame, width, height, false)
+        val rgb565 = resized.copy(Bitmap.Config.RGB_565, false)
+        try {
+            val faces = arrayOfNulls<FaceDetector.Face>(1)
+            if (FaceDetector(width, height, 1).findFaces(rgb565, faces) == 0) return null
+            val middle = PointF()
+            faces[0]?.getMidPoint(middle) ?: return null
+            return (((middle.x - width / 2f) / (width / 2f)) * 100f).roundToInt()
+        } finally {
+            rgb565.recycle()
+            if (resized !== frame) resized.recycle()
+        }
+    }
+
     private fun check(): State {
         val prefs = context.getSharedPreferences("device_setup_v1", Context.MODE_PRIVATE)
         val cameraUrl = (prefs.getString("camera_url", "http://192.168.4.1") ?: "").trimEnd('/')
@@ -97,7 +120,9 @@ class DeviceStatusMonitor(private val context: Context, private val onChange: ()
             if (sensorUrl.isBlank()) null else json("$sensorUrl/sensors")
         } catch (_: Exception) { null }
 
+        val offset = try { frame?.let { faceOffset(it) } } catch (_: Exception) { null }
         return State(camera = frame != null, sensor = sensor != null,
-            gps = sensor?.optBoolean("fix", false) == true, photo = frame)
+            gps = sensor?.optBoolean("fix", false) == true, photo = frame,
+            faceOffsetPercent = offset)
     }
 }
