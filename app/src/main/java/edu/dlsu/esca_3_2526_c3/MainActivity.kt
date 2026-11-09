@@ -26,6 +26,12 @@ import android.widget.TextView
 import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : Activity() {
+    companion object {
+        // Settings is available only during an unlocked developer session.
+        internal var developerSessionEnabled = false
+            private set
+    }
+
     // Firebase test connection and shared monitoring-service state.
     private lateinit var cloud: DemoCloud
     private val statuses get() = DriverMonitoringService.statuses
@@ -66,6 +72,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DriverMonitoringService.restore(this)
+        developerSessionEnabled = false
         nightMode = getSharedPreferences("driver_display", MODE_PRIVATE).getBoolean("night", false)
         Ui.nightMode = nightMode
         window.statusBarColor = Ui.navy
@@ -108,7 +115,7 @@ class MainActivity : Activity() {
         homeTab = Ui.tab(this, "⌂  Home") { showHome() }.apply { textSize = 13f }
         historyTab = Ui.tab(this, "◷  History") { showHistory() }.apply { textSize = 13f }
         accountTab = Ui.tab(this, "Account") { showAccount() }.apply { textSize = 13f }
-        settingsTab = Ui.tab(this, "⚙  Settings") { startActivity(Intent(this, SettingsActivity::class.java)) }.apply { textSize = 13f }
+        settingsTab = Ui.tab(this, "⚙  Settings") { if (developerMode) startActivity(Intent(this, SettingsActivity::class.java)) }.apply { textSize = 13f }
 
         tabs.addView(homeTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
         tabs.addView(historyTab, LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f))
@@ -126,7 +133,23 @@ class MainActivity : Activity() {
             ContextCompat.startForegroundService(this, Intent(this, DriverMonitoringService::class.java).setAction(DriverMonitoringService.START))
         }
 
-        showHome()
+        openRequestedTab(intent)
+    }
+
+    /** Return to the selected driver tab from Developer Settings. */
+    private fun openRequestedTab(source: Intent?) {
+        when (source?.getStringExtra("driver_tab")) {
+            "history" -> showHistory()
+            "account" -> showAccount()
+            else -> showHome()
+        }
+        source?.removeExtra("driver_tab")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (::page.isInitialized) openRequestedTab(intent)
     }
 
     /** Refresh the page currently selected by the driver. */
@@ -229,6 +252,7 @@ class MainActivity : Activity() {
         if (++dashboardTaps == 7) {
             dashboardTaps = 0
             developerMode = !developerMode
+            developerSessionEnabled = developerMode
             cloud.toast(if (developerMode) "Developer mode on" else "Developer mode off")
             updateVisiblePage()
         }
