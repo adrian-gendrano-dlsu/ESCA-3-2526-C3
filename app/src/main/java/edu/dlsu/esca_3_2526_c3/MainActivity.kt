@@ -521,20 +521,29 @@ class MainActivity : Activity() {
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
                 setSingleLine(true)
                 setText(accountEmailDraft)
+                textSize = 14f // font size
             }
             val password = EditText(this).apply {
                 hint = "Password (at least 6 characters)"
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
+                textSize = 14f // font size so full hint can be seen
             }
             account.addView(email)
             account.addView(password)
+
             val confirmation = if (signingUp) EditText(this).apply {
                 hint = "Confirm password"
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
             } else null
             confirmation?.let { account.addView(it) }
+
+            // Set text colors for night mode
+            if (nightMode) listOfNotNull(email, password, confirmation).forEach {
+                it.setTextColor(Color.WHITE)
+                it.setHintTextColor(Color.LTGRAY)
+            }
 
             val feedback = TextView(this).apply { setTextColor(Ui.red); textSize = 14f }
             account.addView(feedback)
