@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -39,7 +40,7 @@ class LauncherActivity : Activity() {
 
     private fun showMessage(message: String) {
         content.removeAllViews()
-        content.addView(Ui.title(this, "ESCA Driver Safety"))
+        content.addView(Ui.title(this, "ESCA-3-2526-C3"))
         val card = Ui.card(this)
         card.addView(Ui.note(this, message))
         if (FirebaseApp.getApps(this).isNotEmpty()) {
@@ -63,6 +64,9 @@ class LauncherActivity : Activity() {
         inputType = InputType.TYPE_CLASS_TEXT or if (password)
             InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         setSingleLine(true)
+        if (password) {
+            transformationMethod = PasswordTransformationMethod.getInstance()
+        }
         textSize = 14f
         if (Ui.nightMode) {
             setTextColor(Color.WHITE)
@@ -72,18 +76,22 @@ class LauncherActivity : Activity() {
 
     private fun showLogin() {
         content.removeAllViews()
-        content.addView(Ui.title(this, "ESCA Driver Safety"))
+        content.addView(Ui.title(this, "ESCA-3-2526-C3"))
+
         val card = Ui.card(this)
         card.addView(Ui.title(this, if (signingUp) "Create account" else "Sign in"))
-        card.addView(Ui.note(this, "Your assigned Firebase role opens the Driver or Supervisor screen."))
+
         val email = field("Email address")
         val password = field("Password", true)
         card.addView(email)
         card.addView(password)
+
         val confirmation = if (signingUp) field("Confirm password", true) else null
         confirmation?.let { card.addView(it) }
+
         val feedback = Ui.note(this, "")
         card.addView(feedback)
+
         val submit = button(if (signingUp) "Create account" else "Sign in") {
             val address = email.text.toString().trim()
             val secret = password.text.toString()
@@ -117,7 +125,6 @@ class LauncherActivity : Activity() {
                 .addOnSuccessListener { feedback.text = "Check your email for reset instructions." }
                 .addOnFailureListener { feedback.text = it.localizedMessage ?: "Could not send reset email." }
         })
-        card.addView(Ui.note(this, "New accounts require a researcher-assigned role before app access."))
         content.addView(card, Ui.blockParams(this))
     }
 

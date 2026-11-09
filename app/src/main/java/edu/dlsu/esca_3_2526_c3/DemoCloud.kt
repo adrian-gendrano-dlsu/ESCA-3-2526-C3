@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -106,12 +107,17 @@ class DemoCloud(private val activity: Activity) {
     fun signInDialog(expectedRole: String) {
         if (!configured) { toast("Add app/google-services.json first, then rebuild."); return }
         val emailInput = EditText(activity).apply { hint = "Researcher email"; inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS }
-        val passInput = EditText(activity).apply { hint = "Password"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        val passInput = EditText(activity).apply {
+            hint = "Password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            transformationMethod = PasswordTransformationMethod.getInstance()
+        }
         val layout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 10, 36, 5)
             addView(emailInput); addView(passInput)
         }
+
         AlertDialog.Builder(activity).setTitle("Sign in as $expectedRole")
             .setMessage("Use an account created in Firebase Authentication and assigned the '$expectedRole' role.")
             .setView(layout)

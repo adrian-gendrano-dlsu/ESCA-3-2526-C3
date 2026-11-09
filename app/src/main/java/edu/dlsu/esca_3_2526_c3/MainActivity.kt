@@ -27,6 +27,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.google.firebase.auth.FirebaseAuth
+import android.text.method.PasswordTransformationMethod
+
 
 class MainActivity : Activity() {
     companion object {
@@ -742,6 +744,7 @@ class MainActivity : Activity() {
                 hint = "Password (at least 6 characters)"
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
+                transformationMethod = PasswordTransformationMethod.getInstance()
                 textSize = 14f // font size so full hint can be seen
             }
             account.addView(email)
@@ -751,6 +754,7 @@ class MainActivity : Activity() {
                 hint = "Confirm password"
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
+                transformationMethod = PasswordTransformationMethod.getInstance()
             } else null
             confirmation?.let { account.addView(it) }
 
