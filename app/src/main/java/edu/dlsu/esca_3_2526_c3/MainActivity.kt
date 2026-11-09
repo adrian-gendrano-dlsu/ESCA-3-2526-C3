@@ -15,6 +15,7 @@ import android.view.Gravity
 import java.text.DateFormat
 import java.util.Date
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -42,6 +43,11 @@ class MainActivity : Activity() {
     private lateinit var scroller: ScrollView
     private lateinit var homeTab: TextView
     private lateinit var historyTab: TextView
+    private var statusStrip: LinearLayout? = null
+    private var cameraFrame: LinearLayout? = null
+
+    // Poll the configured camera and sensor endpoints while the driver UI is visible.
+    private val devices by lazy { DeviceStatusMonitor(this) { refreshDeviceStatus() } }
 
     /** Set up UI and reconnect to an existing monitoring session. */
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,11 +121,13 @@ class MainActivity : Activity() {
         super.onResume()
         Ui.nightMode = nightMode
         DriverMonitoringService.onChange = { if (!isFinishing && !isDestroyed) updateVisiblePage() }
+        devices.start()
         if (::page.isInitialized) updateVisiblePage()
     }
 
     /** Stop UI callbacks while allowing the foreground service to continue. */
     override fun onPause() {
+        devices.stop()
         DriverMonitoringService.onChange = null
         Ui.nightMode = false
         super.onPause()
@@ -147,7 +155,12 @@ class MainActivity : Activity() {
 
         if (next != "Normal") {
             val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
-            recent.add(0, Triple(name, time, next))
+            // An escalation of the same ongoing manual test replaces its previous stage.
+            val prior = if (current == "Warning") recent.indexOfFirst {
+                it.first == name && it.third == "Warning"
+            } else -1
+            if (prior >= 0) recent[prior] = Triple(name, recent[prior].second, next)
+            else recent.add(0, Triple(name, time, next))
             cloud.record(name, next, sessionId)
         }
 
@@ -209,6 +222,8 @@ class MainActivity : Activity() {
         borderPulse?.cancel()
         borderPulse = null
         root.foreground = null
+        statusStrip = null
+        cameraFrame = null
 
         // Flash around both Driving Mode and Details while HIGH risk is active.
         if (home && DriverMonitoringService.active && statuses.values.any { it == "High" }) {
@@ -229,6 +244,52 @@ class MainActivity : Activity() {
         scroller.scrollTo(0, 0)
     }
 
+    /** Repaint only device indicators and camera snapshots without resetting the page. */
+    private fun refreshDeviceStatus() {
+        val state = devices.state
+        statusStrip?.apply {
+            removeAllViews()
+            val indicators = listOf(
+                "📷 Camera" to state.camera,
+                "▣ Sensor" to state.sensor,
+                "⌖ GPS" to state.gps,
+                "☁ Firebase" to cloud.ready
+            )
+            indicators.chunked(2).forEach { pair ->
+                val row = LinearLayout(this@MainActivity)
+                pair.forEach { (label, ready) ->
+                    row.addView(Ui.deviceIndicator(this@MainActivity, label, ready),
+                        LinearLayout.LayoutParams(0, -2, 1f).apply {
+                            setMargins(Ui.dp(this@MainActivity, 2), Ui.dp(this@MainActivity, 2),
+                                Ui.dp(this@MainActivity, 2), Ui.dp(this@MainActivity, 2))
+                        })
+                }
+                addView(row)
+            }
+        }
+        cameraFrame?.apply {
+            removeAllViews() // Immediately discard the last photo if the camera dropped.
+            val photo = state.photo
+            if (state.camera && photo != null) {
+                addView(ImageView(this@MainActivity).apply {
+                    setImageBitmap(photo)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    contentDescription = "Latest camera photo"
+                }, LinearLayout.LayoutParams(-1, Ui.dp(this@MainActivity, 160)))
+            } else {
+                addView(Ui.placeholder(this@MainActivity,
+                    "NO CAMERA PICTURE", "Check the camera connection", 160))
+            }
+        }
+    }
+
+    private fun addConnectionStrip(target: LinearLayout) {
+        target.addView(Ui.eyebrow(this, "DEVICE CONNECTIONS"))
+        statusStrip = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        target.addView(statusStrip)
+        refreshDeviceStatus()
+    }
+
     /** Driving Mode */
     private fun showHome() {
         onHome = true
@@ -244,12 +305,7 @@ class MainActivity : Activity() {
             statuses.values.any { it == "Warning" } -> "MEDIUM"
             else -> "LOW"
         }
-        val color = when (risk) {
-            "HIGH" -> Ui.red
-            "MEDIUM" -> Color.rgb(250, 204, 21)
-            "LOW" -> Ui.green
-            else -> Ui.muted
-        }
+        val color = if (risk == "STOPPED") Ui.muted else Ui.riskColor(risk)
 
         // The solid-color panel makes the risk visible at a glance.
         val riskBackground = GradientDrawable().apply {
@@ -275,7 +331,7 @@ class MainActivity : Activity() {
             "LOW" -> "Keep your eyes on the road"
             else -> "Driver monitoring service is stopped"
         }))
-        overview.addView(Ui.title(this, "Camera not connected"))
+        addConnectionStrip(overview)
 
         overview.addView(Button(this).apply {
             text = if (DriverMonitoringService.active) "Stop driver monitoring service" else "Start driver monitoring service"
@@ -309,12 +365,17 @@ class MainActivity : Activity() {
         selectTab(true)
         val metrics = Ui.card(this)
         metrics.addView(Ui.title(this, "Detection Details"))
+        addConnectionStrip(metrics)
+        metrics.addView(Ui.space(this, 8))
+        cameraFrame = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        metrics.addView(cameraFrame)
+        refreshDeviceStatus()
         metrics.addView(Ui.pair(this, "Trip duration", if (DriverMonitoringService.active)
             "${(System.currentTimeMillis() - sessionStarted).coerceAtLeast(0L) / 60000} min" else "Not monitoring"))
 
         // Make rows tappable to simulate detection status.
         for (name in listOf("Drowsiness", "Yawning", "Gaze deviation", "Phone usage")) {
-            val row = Ui.pair(this, name, statuses[name] ?: "Normal")
+            val row = Ui.pair(this, name, Ui.riskLevel(statuses[name] ?: "Normal"))
             row.setOnClickListener { trigger(name) }
             metrics.addView(row)
         }
@@ -322,11 +383,11 @@ class MainActivity : Activity() {
 
         // Replace these sample measurements eventually.
         metrics.addView(Ui.eyebrow(this, "MEASUREMENTS"))
-        metrics.addView(Ui.pair(this, "EAR", "0.286"))
-        metrics.addView(Ui.pair(this, "MAR", "0.124"))
-        metrics.addView(Ui.pair(this, "Yaw", "4.5°"))
-        metrics.addView(Ui.pair(this, "Pitch", "-2.0°"))
-        metrics.addView(Ui.pair(this, "FPS", "Camera not connected"))
+        metrics.addView(Ui.pair(this, "Eye openness (EAR)", "0.286"))
+        metrics.addView(Ui.pair(this, "Mouth opening (MAR)", "0.124"))
+        metrics.addView(Ui.pair(this, "Head turn (yaw)", "4.5°"))
+        metrics.addView(Ui.pair(this, "Head tilt (pitch)", "-2.0°"))
+        metrics.addView(Ui.pair(this, "Camera frames per second", "Camera not connected"))
         metrics.addView(Button(this).apply {
             text = "Back to Driving mode"
             isAllCaps = false
@@ -340,8 +401,8 @@ class MainActivity : Activity() {
         alerts.addView(Ui.title(this, "Recent Alerts"))
         if (recent.isEmpty()) alerts.addView(Ui.note(this, "No events yet"))
         recent.take(5).forEach { (behavior, time, severity) ->
-            alerts.addView(Ui.alert(this, "$behavior · TEST", time, severity.uppercase(),
-                if (severity == "High") Ui.red else Ui.amber))
+            alerts.addView(Ui.alert(this, Ui.alertCause(behavior), time, Ui.riskLevel(severity),
+                Ui.riskColor(severity)))
         }
         page.addView(alerts, Ui.blockParams(this))
     }

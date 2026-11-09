@@ -16,7 +16,6 @@ import java.util.Date
 import android.widget.LinearLayout
 import android.widget.ScrollView
 
-/** A separate launch entry. No navigation from MainActivity leads here. */
 class SupervisorActivity : Activity() {
     private data class Driver(
         val name: String, val risk: String, val event: String,
@@ -25,7 +24,7 @@ class SupervisorActivity : Activity() {
 
     private val drivers = listOf(
         Driver("Driver 1", "High risk", "Using phone", "48 minutes", "61 km/h", "18.35, 121.04", Ui.red),
-        Driver("Driver 2", "Medium risk", "Yawning", "32 minutes", "45 km/h", "18.31, 121.07", Ui.amber),
+        Driver("Driver 2", "Medium risk", "Yawning", "32 minutes", "45 km/h", "18.31, 121.07", Ui.yellow),
         Driver("Driver 3", "Low risk", "Gaze deviation", "15 minutes", "27 km/h", "18.28, 121.09", Ui.green)
     )
     private lateinit var cloud: DemoCloud
@@ -92,14 +91,27 @@ class SupervisorActivity : Activity() {
         alertsReference = cloud.eventsRef().orderByChild("timestampMs").limitToLast(30)
         alertsListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val rows = mutableListOf<Triple<String, String, String>>()
+                data class Event(val name: String, val ms: Long, val level: String, val session: String)
+                val rows = mutableListOf<Event>()
                 snapshot.children.forEach { event ->
                     val what = event.child("behavior").getValue(String::class.java) ?: "Event"
                     val severity = event.child("severity").getValue(String::class.java) ?: "Warning"
                     val ms = event.child("timestampMs").getValue(Long::class.java) ?: 0L
-                    rows.add(Triple(what, if (ms == 0L) "?" else DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(ms)), severity))
+                    val session = event.child("sessionId").getValue(String::class.java) ?: ""
+
+                    // Match the previous stage even when another behavior occurred between taps.
+                    val prior = rows.indexOfLast { it.session == session && session.isNotBlank() &&
+                            it.name == what && Ui.riskLevel(it.level) == "MEDIUM" &&
+                            Ui.riskLevel(severity) == "HIGH" && ms - it.ms in 0..12_000L }
+                    if (prior >= 0) rows[prior] = rows[prior].copy(level = severity)
+                    else rows.add(Event(what, ms, severity, session))
                 }
-                liveAlerts = rows.reversed().take(15)
+
+                liveAlerts = rows.asReversed().take(15).map {
+                    Triple(it.name, if (it.ms == 0L) "?" else
+                        DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it.ms)), it.level)
+                }
+
                 if (!isFinishing) showSupervisor()
             }
             override fun onCancelled(error: DatabaseError) { cloud.toast("Alert read denied: ${error.message}") }
@@ -135,8 +147,8 @@ class SupervisorActivity : Activity() {
         drivers.forEachIndexed { index, driver ->
             val risk = if (index == 0) liveRisk else driver.risk
             val event = if (index == 0) liveEvent else driver.event
-            val color = if (index == 0) (if (liveRisk.startsWith("High")) Ui.red else if (liveRisk.startsWith("Medium")) Ui.amber else Ui.green) else driver.color
-            val row = Ui.monitorRow(this, driver.name, risk, event, color, index == selected)
+            val color = Ui.riskColor(risk)
+            val row = Ui.monitorRow(this, driver.name, Ui.riskLevel(risk), event, color, index == selected)
             row.setOnClickListener { selected = index; showSupervisor() }
             monitor.addView(row)
         }
@@ -146,11 +158,11 @@ class SupervisorActivity : Activity() {
         val details = Ui.card(this)
         details.addView(Ui.title(this, "Selected Driver"))
         details.addView(Ui.pair(this, "Driver", driver.name))
-        details.addView(Ui.pair(this, "Risk Level", if (selected == 0) liveRisk else driver.risk))
+        details.addView(Ui.pair(this, "Risk", Ui.riskLevel(if (selected == 0) liveRisk else driver.risk)))
         details.addView(Ui.pair(this, "Current status", if (selected == 0) liveEvent else driver.event))
         details.addView(Ui.pair(this, "Trip duration", if (selected == 0) liveDuration else driver.trip))
-        details.addView(Ui.pair(this, "Speed", if (selected == 0) "Not collected · demo" else "${driver.speed} (sample)"))
-        details.addView(Ui.pair(this, "Location", if (selected == 0) "Not collected · demo" else "${driver.position} (sample)"))
+        details.addView(Ui.pair(this, "Speed", if (selected == 0) "MPU6050 was not connected" else "${driver.speed} (sample)"))
+        details.addView(Ui.pair(this, "Location", if (selected == 0) "MPU6050 was not connected" else "${driver.position} (sample)"))
         if (selected == 0) details.addView(Ui.note(this, "Last Firebase update: $lastUpdate"))
         details.addView(Ui.space(this, 10))
         details.addView(Ui.placeholder(this, "MAP", "GPS map for ${driver.name} goes here", 150))
@@ -160,7 +172,8 @@ class SupervisorActivity : Activity() {
         alerts.addView(Ui.title(this, "Recent Alerts"))
         if (liveAlerts.isEmpty()) alerts.addView(Ui.note(this, "No Firebase events yet."))
         liveAlerts.take(10).forEach { (event, time, severity) ->
-            alerts.addView(Ui.alert(this, "Driver 1 · $event · TEST", time, severity.uppercase(), if (severity == "High") Ui.red else Ui.amber))
+            alerts.addView(Ui.alert(this, "Driver 1 · ${Ui.alertCause(event)}", time,
+                Ui.riskLevel(severity), Ui.riskColor(severity)))
         }
         content.addView(alerts, Ui.blockParams(this))
     }

@@ -1,0 +1,103 @@
+package edu.dlsu.esca_3_2526_c3
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Handler
+import android.os.Looper
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
+/** Checks configured prototype endpoints off the UI thread. No detector is implemented here. */
+class DeviceStatusMonitor(private val context: Context, private val onChange: () -> Unit) {
+    data class State(
+        val camera: Boolean = false,
+        val sensor: Boolean = false,
+        val gps: Boolean = false,
+        val photo: Bitmap? = null
+    )
+
+    var state = State()
+        private set
+    private var running = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val poll = object : Runnable {
+        override fun run() {
+            if (!running) return
+            Thread {
+                val checked = check()
+                handler.post {
+                    if (!running) return@post
+                    // A failed check supplies photo=null, so an old image cannot remain visible.
+                    state = checked
+                    onChange()
+                    handler.postDelayed(this, 5_000L)
+                }
+            }.start()
+        }
+    }
+
+    fun start() {
+        if (running) return
+        running = true
+        handler.post(poll)
+    }
+
+    fun stop() {
+        running = false
+        handler.removeCallbacks(poll)
+        state = State()
+    }
+
+    private fun connect(url: String): HttpURLConnection {
+        val target = URL(url)
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val wifi = manager.allNetworks.firstOrNull {
+            manager.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        }
+        val connection = (if (wifi == null) target.openConnection() else wifi.openConnection(target)) as HttpURLConnection
+        return connection.apply {
+            connectTimeout = 2500
+            readTimeout = 2500
+            useCaches = false
+        }
+    }
+
+    private fun json(url: String): JSONObject {
+        val c = connect(url)
+        return try {
+            require(c.responseCode == 200) { "Device unavailable" }
+            JSONObject(c.inputStream.bufferedReader().use { it.readText().take(4000) })
+        } finally { c.disconnect() }
+    }
+
+    private fun photo(url: String): Bitmap {
+        val c = connect(url)
+        return try {
+            require(c.responseCode == 200 && c.contentType?.startsWith("image/jpeg") == true)
+            BitmapFactory.decodeStream(c.inputStream) ?: error("No camera picture")
+        } finally { c.disconnect() }
+    }
+
+    private fun check(): State {
+        val prefs = context.getSharedPreferences("device_setup_v1", Context.MODE_PRIVATE)
+        val cameraUrl = (prefs.getString("camera_url", "http://192.168.4.1") ?: "").trimEnd('/')
+        val sensorUrl = (prefs.getString("sensor_url", "") ?: "").trimEnd('/')
+
+        val frame = try {
+            if (cameraUrl.isBlank() || !json("$cameraUrl/api/status").optBoolean("cameraReady", false)) null
+            else photo("$cameraUrl/jpg")
+        } catch (_: Exception) { null }
+
+        val sensor = try {
+            if (sensorUrl.isBlank()) null else json("$sensorUrl/sensors")
+        } catch (_: Exception) { null }
+
+        return State(camera = frame != null, sensor = sensor != null,
+            gps = sensor?.optBoolean("fix", false) == true, photo = frame)
+    }
+}

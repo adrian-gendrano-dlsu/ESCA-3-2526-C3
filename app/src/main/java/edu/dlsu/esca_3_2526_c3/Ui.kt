@@ -21,6 +21,37 @@ object Ui {
     val green = Color.rgb(22, 163, 74)
     val amber = Color.rgb(180, 83, 9)
     val red = Color.rgb(220, 38, 38)
+    val yellow = Color.rgb(250, 204, 21)
+
+    /** One visible LOW / MEDIUM / HIGH scale, including older Firebase event values. */
+    fun riskLevel(value: String): String = when {
+        value.startsWith("High", ignoreCase = true) -> "HIGH"
+        value.startsWith("Medium", ignoreCase = true) || value.equals("Warning", true) -> "MEDIUM"
+        else -> "LOW"
+    }
+
+    fun riskColor(value: String): Int = when (riskLevel(value)) {
+        "HIGH" -> red
+        "MEDIUM" -> yellow
+        else -> green
+    }
+
+    /** no eye-closure duration is measured. */
+    fun alertCause(behavior: String): String = when (behavior) {
+        "Drowsiness" -> "Drowsiness · manual test"
+        "Yawning" -> "Yawning · manual test"
+        "Gaze deviation" -> "Looking away · manual test"
+        "Phone usage" -> "Phone use · manual test"
+        else -> "$behavior · manual test"
+    }
+
+    /** device indicator */
+    fun deviceIndicator(c: Context, label: String, working: Boolean) =
+        text(c, label, 12f, white, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(c, 5), dp(c, 8), dp(c, 5), dp(c, 8))
+            background = shape(if (working) green else red, c, 8)
+        }
 
 
     // Night mode changes the page and card backgrounds without changing risk colors.
@@ -101,7 +132,7 @@ object Ui {
 
 
     /** Compact colored status label */
-    fun chip(c: Context, value: String, color: Int) = text(c, value, 12f, color, true).apply {
+    fun chip(c: Context, value: String, color: Int) = text(c, value, 12f, if (color == yellow) Color.rgb(113, 63, 18) else color, true).apply {
         setPadding(dp(c, 10), dp(c, 7), dp(c, 10), dp(c, 7))
         background = shape(Color.argb(20, Color.red(color), Color.green(color), Color.blue(color)), c, 8)
     }
