@@ -72,7 +72,7 @@ class SupervisorActivity : Activity() {
             setPadding(Ui.dp(this@SupervisorActivity, 16), 0,
                 Ui.dp(this@SupervisorActivity, 16), Ui.dp(this@SupervisorActivity, 24))
         }
-        column.addView(Ui.header(this, "DantEye - Supervisor Dashboard"))
+        column.addView(Ui.header(this, "Supervisor Dashboard"))
         column.addView(content)
         scroll.addView(column, ViewGroup.LayoutParams(-1, -2))
         setContentView(scroll)
