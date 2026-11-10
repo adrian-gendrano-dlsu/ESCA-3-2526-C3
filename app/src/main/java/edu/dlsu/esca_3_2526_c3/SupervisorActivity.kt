@@ -62,14 +62,21 @@ class SupervisorActivity : Activity() {
         selectedId = intent.getStringExtra("driver_id")?.takeIf { it.isNotBlank() }
         window.statusBarColor = Ui.navy
         window.navigationBarColor = Ui.navy
+
         scroll = ScrollView(this).apply { setBackgroundColor(Ui.background) }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(Ui.dp(this@SupervisorActivity, 16), 0,
                 Ui.dp(this@SupervisorActivity, 16), Ui.dp(this@SupervisorActivity, 24))
         }
-        scroll.addView(content)
+        column.addView(Ui.header(this, "DantEye - Supervisor Dashboard"))
+        column.addView(content)
+        scroll.addView(column, ViewGroup.LayoutParams(-1, -2))
         setContentView(scroll)
+
         cloud = DemoCloud(this)
         cloud.onChange = roleChanged@{
             if (cloud.role == "driver") {
@@ -241,8 +248,8 @@ class SupervisorActivity : Activity() {
         val scrollY = if (::scroll.isInitialized) scroll.scrollY else 0
         content.removeAllViews()
         ageLabels.clear()
-        content.addView(Ui.header(this, "Supervisor Dashboard"))
         val account = Ui.card(this)
+
         account.addView(Ui.note(this, cloud.connectionLabel))
         account.addView(Ui.note(this, "Cloud data restricted to supervisor accounts."))
         account.addView(Button(this).apply {
